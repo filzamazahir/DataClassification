@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 
 # 1. Load the online news popularity dataset and store it as a pandas dataframe
 file_location = 'OnlineNewsPopularity.csv'
-news_df = pd.read_csv(file_location) 
+news_df = pd.read_csv(file_location)
+
 
 
