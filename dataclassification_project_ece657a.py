@@ -186,18 +186,8 @@ print(ada_classification_report)
 print('\n')
 
 
-
-
-#AdaBoost Classifier:
-Ada = AdaBoostClassifier()
-Ada.fit(news_x_train, news_y_train)
-
-#finding accuracy:
-test_prediction = Ada.predict(news_x_test)
-print(np.count_nonzero(test_prediction == news_y_test) / float(news_y_test.size))
-#it gave us 56.6%
-print(np.mean(test_prediction==news_y_test))
-print(Ada.score(news_x_test,news_y_test))
+# print(np.count_nonzero(ada_prediction == news_y_test) / float(news_y_test.size))
+# print(np.mean(ada_prediction==news_y_test))
 
 # #scattering original data:
 # plt.scatter(news_x_train.iloc[:, 0], news_x_train.iloc[:, 1], c=news_y_train, s=32, cmap='summer')
@@ -213,7 +203,7 @@ print(Ada.score(news_x_test,news_y_test))
 
 
 
-# Trees of Predictors Classifier
+# TREES OF PREDICTORS CLASSIFIER (ToPs)
 
 
 
