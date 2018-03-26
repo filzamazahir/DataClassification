@@ -19,6 +19,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import classification_report
 from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import log_loss
 from sklearn.model_selection import KFold
 import matplotlib as mpl 
 mpl.use('TkAgg')
@@ -26,6 +27,8 @@ import matplotlib.pyplot as plt
 from matplotlib import pyplot
 from sklearn.metrics import accuracy_score
 from sklearn.feature_selection import SelectFromModel
+from sklearn.tree import DecisionTreeClassifier
+from sklearn import linear_model
 # Load the online news popularity dataset and store it as a pandas dataframe
 file_location = 'OnlineNewsPopularity.csv'
 news_df_original = pd.read_csv(file_location, sep=', ', engine='python')
@@ -63,9 +66,6 @@ news_x_reduced = model.transform(news_x)
 # Split dataset into test and train set - 50% 
 news_x_train, news_x_test, news_y_train, news_y_test = train_test_split(news_x_reduced, news_y, test_size=0.50, random_state=42)
 # news_x_test_reset = news_x_test.reset_index(drop=True)
-
-
-
 
 
 # RANDOM FOREST CLASSIFIER
@@ -213,21 +213,19 @@ print('\n')
 
 
 # TREES OF PREDICTORS CLASSIFIER (ToPs)
-#this part is not yet finalized, feel free to delete it or modify it
-#Step 1: create predictive model (predictors) using random forest classifier:
-#create k-fold cross validation on training set:
-kf = KFold(n_splits=5)
-clf_RF = RandomForestClassifier()
-for k, (train, test) in enumerate(kf.split(news_x_train, news_y_train)): 
-	clf_RF.fit(news_x_train.iloc[train], news_y_train.iloc[train])
-	clf_RF_pred = clf_RF.predict(news_x_train.iloc[test])
-	clf_RF_accuracy.append(accuracy_score(news_y_train.iloc[test], clf_RF_pred))
-	clf_RF_report = classification_report(news_y_train.iloc[test], clf_RF_pred, target_names= class_names)
-clf_RF_accuracy = np.array(clf_RF_accuracy)
-print('RF  Accuracy {0:.3f} ({1:.3f})'.format(clf_RF_accuracy.mean(), clf_RF_accuracy.std()))
-#print(clf_RF_report)
-#print(decision_path(news_x_train))
 
+
+
+
+#building predictive model
+LM = linear_model.SGDClassifier()
+LM.fit(news_x_train, news_y_train)
+LM_pred = LM.predict(news_x_test)
+#LM_accuracy = accuracy_score(news_y_test, LM_pred)
+
+
+#finding logloss:
+logloss =log_loss(news_y_test, LM_pred, eps=1e-15)
 
 
 
