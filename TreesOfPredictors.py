@@ -87,6 +87,9 @@ class Node:
 		self.feature_to_split = None
 		self.threshold = None
 
+		# Weight of each node (Algorithm 2)
+		self.weight = None
+
 
 	def __str__(self):
 		# string_to_print = 'Predictor: ' + str(self.predictor) + '\n'
@@ -167,8 +170,9 @@ class Node:
 
 
 
-	# Figure out what the feature_to_split and threshold is for current node, then assign children based on that split
-	def find_feature_to_split(self, max_depth):
+	# Create a sub_tree (ToPs)
+	# Figure out what the feature_to_split and threshold with minimum loss, then assign children based on that split
+	def create_sub_tree(self, max_depth):
 		# threshold = 0.5
 		# feature = column_names[2]
 
@@ -229,12 +233,12 @@ class Node:
 
 			# Assign children or this node based on threshold and feature_to_split found
 			# self.right, self.left = self.split_node(threshold, feature_to_split)
-			self.right.find_feature_to_split(max_depth)
-			self.left.find_feature_to_split(max_depth)
-
-		
+			self.right.create_sub_tree(max_depth)
+			self.left.create_sub_tree(max_depth)
+	
 		return
 
+	# Calculating loss values of all leaf nodes
 	def loss_values_of_all_leaf_nodes(self):
 		sum_loss_value = 0
 
@@ -248,9 +252,17 @@ class Node:
 		return sum_loss_value
 
 
+	# Algorithm 2 - Adding weights on the Path
+	def add_weights_on_path(self):
+
+
+		return
 
 
 
+
+# Outside Node class
+# Function to create root node from the given dataset
 def construct_root_node():
 	clf_root = linear_model.SGDClassifier(loss='log')
 	# clf_root = RandomForestClassifier()
@@ -263,15 +275,14 @@ def construct_root_node():
 	
 
 
+# Test functions here - construct node from dataset, then create subtree
 t0 = time.time()
 
-
 root_node = construct_root_node()
-root_node.find_feature_to_split(3)
+root_node.create_sub_tree(3)
 print(root_node)
 loss_on_leafs = root_node.loss_values_of_all_leaf_nodes
 print('Loss values of all leafs', loss_on_leafs)
-
 
 t1 = time.time()
 
