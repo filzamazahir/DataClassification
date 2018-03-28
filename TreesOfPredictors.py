@@ -5,6 +5,7 @@
 
 # Import Libraries 
 import pandas as pd
+import numpy as np
 
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
@@ -139,7 +140,7 @@ class Node:
 		# Train classifier on the right data
 		if len(right_y_train.unique()) == 1:
 			clf_right = DummyClassifier()
-			print('Feature: {0}    Dummy Classifier used right'.format(feature))
+			# print('Feature: {0}    Dummy Classifier used right'.format(feature))
 		else:
 			clf_right = linear_model.SGDClassifier(loss='log')
 			# clf_right = RandomForestClassifier()
@@ -150,7 +151,7 @@ class Node:
 		# Train classifier on the left data
 		if len(left_y_train.unique()) == 1:
 			clf_left = DummyClassifier()
-			print('Feature: {0}    Dummy Classifier used left'.format(feature))
+			# print('Feature: {0}    Dummy Classifier used left'.format(feature))
 		else:
 			clf_left = linear_model.SGDClassifier(loss='log')
 			# clf_left = RandomForestClassifier()
@@ -176,6 +177,7 @@ class Node:
 			return
 		minimum_loss_so_far = inf
 		feature_at_min_loss = None
+		threshold_at_min_loss = None
 		children_nodes_at_min_loss = None
 
 
@@ -184,23 +186,24 @@ class Node:
 		features_compared = []
 
 		for feature in column_names:
-			threshold = 0.5   #FIX THRESHOLD!!
-		# 	for threshold in range(0.1, 1, 0.1):
+			# threshold = 0.5   #FIX THRESHOLD!!
+			for threshold in np.arange(0.1, 1.0, 0.1):
 			# print(feature)
-			children_nodes = self.split_node(threshold, feature)
-			if children_nodes == None:
-				continue
+				children_nodes = self.split_node(threshold, feature)
+				if children_nodes == None:
+					continue
 
-			right_node = children_nodes[0]
-			left_node = children_nodes[1]
+				right_node = children_nodes[0]
+				left_node = children_nodes[1]
 
-			# Compare log loss values of parent and children
-			children_log_loss = (right_node.log_loss_value + left_node.log_loss_value)
-			if children_log_loss < minimum_loss_so_far:
-				print("New min ", children_log_loss)
-				minimum_loss_so_far = children_log_loss
-				feature_at_min_loss = feature
-				children_nodes_at_min_loss = children_nodes
+				# Compare log loss values of parent and children
+				children_log_loss = (right_node.log_loss_value + left_node.log_loss_value)
+				if children_log_loss < minimum_loss_so_far:
+					# print("New min ", children_log_loss)
+					minimum_loss_so_far = children_log_loss
+					feature_at_min_loss = feature
+					threshold_at_min_loss = threshold
+					children_nodes_at_min_loss = children_nodes
 
 			# print('Children log loss value appended', children_log_loss)
 			# children_loss_values.append(children_log_loss)
@@ -219,7 +222,7 @@ class Node:
 			print('---Feature with this small loss:', feature_at_min_loss)
 
 			# Assign threshold and feature_to_split, children attribute of this node
-			self.threshold = threshold
+			self.threshold = threshold_at_min_loss
 			self.feature_to_split = feature_at_min_loss
 			self.right = children_nodes_at_min_loss[0]
 			self.left = children_nodes_at_min_loss[1]
@@ -232,9 +235,17 @@ class Node:
 		
 		return
 
-	def create_sub_tree(self):
+	def loss_values_of_all_leaf_nodes(self):
+		sum_loss_value = 0
 
-		return
+		if self.left == None and self.right == None:
+			sum_loss_value += self.log_loss_value
+
+		else:
+			self.left.loss_values_of_all_leaf_nodes()
+			self.right.loss_values_of_all_leaf_nodes()
+
+		return sum_loss_value
 
 
 
@@ -258,6 +269,8 @@ t0 = time.time()
 root_node = construct_root_node()
 root_node.find_feature_to_split(3)
 print(root_node)
+loss_on_leafs = root_node.loss_values_of_all_leaf_nodes
+print('Loss values of all leafs', loss_on_leafs)
 
 
 t1 = time.time()
