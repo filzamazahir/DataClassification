@@ -78,6 +78,23 @@ x_validate1, x_validate2, y_validate1, y_validate2 = train_test_split(x_validate
 
 # print(news_y)
 
+# List of classifiers
+classifiers = ['RandomForest', 'ExtraTrees', 'AdaBoost']
+# classifiers = ['LinearSGD']
+
+def get_classifier_instance(name):
+	if name == 'RandomForest':
+		classifier = RandomForestClassifier()
+	elif name == 'ExtraTrees':
+		classifier = ExtraTreesClassifier()
+	elif name == 'AdaBoost':
+		classifier = AdaBoostClassifier()
+	elif name == 'LinearSGD':
+		classifier = linear_model.SGDClassifier(loss='log', max_iter=10, tol=10.001)
+
+	return classifier
+
+
 
 class ToPs:
 	def __init__(self, max_depth):
@@ -105,6 +122,7 @@ class Node:
 		# Set in the find_split function
 		self.feature_to_split = None
 		self.threshold = None
+		self.predictor_name = None
 
 		# Weight of each node (Algorithm 2)
 		self.weight = None
@@ -115,6 +133,7 @@ class Node:
 		prefix = '   '*self.current_depth
 		string_to_print = prefix + 'Feature to split: ' + str(self.feature_to_split) + '\n'
 		string_to_print += prefix + 'Threshold: ' + str(self.threshold) +'\n'
+		string_to_print += prefix + 'Predictor: ' + str(self.predictor_name) + '\n'
 		string_to_print += prefix + 'Log Loss: ' + str(self.log_loss_value) + '\n'
 		if self.left == None:
 			string_to_print += prefix + 'Left Child: ' + str(self.left) + '\n'
@@ -132,10 +151,9 @@ class Node:
 	
 
 
-	# Split a node based on a given feature and threshold:\
-	def split_node(self, threshold, feature):
-		# print('Current Feature', feature)
-		# print(' -Threshold', threshold)
+	# Split a node based on a given feature and threshold:
+	def split_node(self, feature, threshold, classifier):
+		print('Feature: {0}, Threshold: {1:.1f}, Classifier: {2}'.format(feature, threshold, classifier))
 
 		# Split the validation data
 		right_x_validate1 = self.x_validate1[self.x_validate1[feature] >= threshold]
@@ -165,7 +183,8 @@ class Node:
 			# print('Feature: {0}    Dummy Classifier used right'.format(feature))
 		else:
 			# clf_right = linear_model.SGDClassifier(loss='log')
-			clf_right = RandomForestClassifier()
+			# clf_right = RandomForestClassifier()
+			clf_right = get_classifier_instance(classifier)
 		clf_right.fit(right_x_train, right_y_train)
 		clf_right_y_prediction = clf_right.predict(right_x_validate1)
 		log_loss_value_right = log_loss(right_y_validate1, clf_right_y_prediction, normalize=False, labels = [0,1])
@@ -176,7 +195,8 @@ class Node:
 			# print('Feature: {0}    Dummy Classifier used left'.format(feature))
 		else:
 			# clf_left = linear_model.SGDClassifier(loss='log')
-			clf_left = RandomForestClassifier()
+			# clf_left = RandomForestClassifier()
+			clf_left = get_classifier_instance(classifier)
 		clf_left.fit(left_x_train, left_y_train) 
 		clf_left_y_prediction = clf_left.predict(left_x_validate1)
 		log_loss_value_left = log_loss(left_y_validate1, clf_left_y_prediction, normalize = False, labels = [0,1])
@@ -192,6 +212,7 @@ class Node:
 	# Create a sub_tree (ToPs)
 	# Figure out what the feature_to_split and threshold with minimum loss, then assign children based on that split
 	def create_sub_tree(self, max_depth):
+		print('Current Depth:', self.current_depth)
 		threshold_binary = [0.5]
 		threshold_continous = np.arange(0.1, 1.0, 0.1)
 
@@ -201,33 +222,37 @@ class Node:
 		minimum_loss_so_far = inf
 		feature_at_min_loss = None
 		threshold_at_min_loss = None
+		classifier_name_at_min_loss = None
 		children_nodes_at_min_loss = None
 
 
 		column_names = self.x_train.columns.values
 		children_loss_values = []
-		features_compared = []
+		# features_compared = []
 
 		for feature in column_names:
 			threshold_range = threshold_binary if feature in binary_columns else threshold_continous
 
 			for threshold in threshold_range:
 
-				children_nodes = self.split_node(threshold, feature)
-				if children_nodes == None:
-					continue
+				for classifier_name in classifiers:
 
-				right_node = children_nodes[0]
-				left_node = children_nodes[1]
+					children_nodes = self.split_node(feature, threshold, classifier_name)
+					if children_nodes == None:
+						continue
 
-				# Compare log loss values of parent and children
-				children_log_loss = (right_node.log_loss_value + left_node.log_loss_value)
-				if children_log_loss < minimum_loss_so_far:
-					# print("New min ", children_log_loss)
-					minimum_loss_so_far = children_log_loss
-					feature_at_min_loss = feature
-					threshold_at_min_loss = threshold
-					children_nodes_at_min_loss = children_nodes
+					right_node = children_nodes[0]
+					left_node = children_nodes[1]
+
+					# Compare log loss values of parent and children
+					children_log_loss = (right_node.log_loss_value + left_node.log_loss_value)
+					if children_log_loss < minimum_loss_so_far:
+						# print("New min ", children_log_loss)
+						minimum_loss_so_far = children_log_loss
+						feature_at_min_loss = feature
+						threshold_at_min_loss = threshold
+						classifier_name_at_min_loss = classifier_name
+						children_nodes_at_min_loss = children_nodes
 
 			# print('Children log loss value appended', children_log_loss)
 			# children_loss_values.append(children_log_loss)
@@ -284,12 +309,22 @@ class Node:
 # Function to create root node from the given dataset
 def construct_root_node():
 	# clf_root = linear_model.SGDClassifier(loss='log')
-	clf_root = RandomForestClassifier()
-	clf_root.fit(x_train, y_train) # Pass dataset into this function
-	clf_root_y_prediction = clf_root.predict(x_validate1)
-	loss_on_validation1 = log_loss(y_validate1, clf_root_y_prediction, normalize= False, labels = [0,1])
+	loss_values_list = [0 for i in range(len(classifiers))]
+	predictors = [0 for i in range(len(classifiers))]
+	print('Root Node')
+	for clf in classifiers:
+		clf_root = get_classifier_instance(clf)
+		clf_root.fit(x_train, y_train) # Pass dataset into this function
+		clf_root_y_prediction = clf_root.predict(x_validate1)
+		loss_on_validation1 = log_loss(y_validate1, clf_root_y_prediction, normalize= False, labels = [0,1])
 
-	root_node = Node(x_train, y_train, x_validate1, y_validate1, loss_on_validation1, clf_root, 0)
+		predictors.append(clf_root)
+		loss_values_list.append(loss_on_validation1)
+
+	predictor_index = loss_values_list.index(min(loss_values_list))
+
+
+	root_node = Node(x_train, y_train, x_validate1, y_validate1, loss_on_validation1, predictors[predictor_index], 0)
 	return root_node
 	
 
@@ -305,7 +340,7 @@ print('Loss values of all leafs', loss_on_leafs)
 
 t1 = time.time()
 
-print('Total Time taken: {0:.1f} seconds'.format(t1-t0))
+print('Total Time taken: {0:.1f} mins'.format((t1-t0)/60))
 
 
 
