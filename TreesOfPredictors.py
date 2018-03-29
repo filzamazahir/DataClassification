@@ -43,6 +43,17 @@ news_y = news_y.apply(lambda x: 1 if x >=1400 else 0)
 
 news_x = news_df.drop(['shares'], axis = 1)
 
+binary_columns = set()
+continous_columns = set()
+
+for column in news_x.columns.values:
+	if len(news_x[column].unique()) == 2:
+		binary_columns.add(column)
+	else:
+		continous_columns.add(column)
+# print('Binary columns', binary_columns)
+# print('Continous Columns', continous_columns)
+
 # Standardization of the data
 # zscore = preprocessing.StandardScaler().fit_transform(news_x)
 # news_x = pd.DataFrame(zscore, columns=list(news_x.columns.values)) #convert to nice table 
@@ -66,6 +77,14 @@ x_train, x_validate, y_train, y_validate = train_test_split(x_rest, y_rest, test
 x_validate1, x_validate2, y_validate1, y_validate2 = train_test_split(x_validate, y_validate, test_size=0.5, stratify=y_validate)
 
 # print(news_y)
+
+
+class ToPs:
+	def __init__(self, max_depth):
+		
+		return
+
+
 
 
 # Node class
@@ -145,8 +164,8 @@ class Node:
 			clf_right = DummyClassifier()
 			# print('Feature: {0}    Dummy Classifier used right'.format(feature))
 		else:
-			clf_right = linear_model.SGDClassifier(loss='log')
-			# clf_right = RandomForestClassifier()
+			# clf_right = linear_model.SGDClassifier(loss='log')
+			clf_right = RandomForestClassifier()
 		clf_right.fit(right_x_train, right_y_train)
 		clf_right_y_prediction = clf_right.predict(right_x_validate1)
 		log_loss_value_right = log_loss(right_y_validate1, clf_right_y_prediction, normalize=False, labels = [0,1])
@@ -156,8 +175,8 @@ class Node:
 			clf_left = DummyClassifier()
 			# print('Feature: {0}    Dummy Classifier used left'.format(feature))
 		else:
-			clf_left = linear_model.SGDClassifier(loss='log')
-			# clf_left = RandomForestClassifier()
+			# clf_left = linear_model.SGDClassifier(loss='log')
+			clf_left = RandomForestClassifier()
 		clf_left.fit(left_x_train, left_y_train) 
 		clf_left_y_prediction = clf_left.predict(left_x_validate1)
 		log_loss_value_left = log_loss(left_y_validate1, clf_left_y_prediction, normalize = False, labels = [0,1])
@@ -173,8 +192,8 @@ class Node:
 	# Create a sub_tree (ToPs)
 	# Figure out what the feature_to_split and threshold with minimum loss, then assign children based on that split
 	def create_sub_tree(self, max_depth):
-		# threshold = 0.5
-		# feature = column_names[2]
+		threshold_binary = [0.5]
+		threshold_continous = np.arange(0.1, 1.0, 0.1)
 
 		if self.current_depth >= max_depth:
 			print('Depth reached - lets be done')
@@ -190,9 +209,10 @@ class Node:
 		features_compared = []
 
 		for feature in column_names:
-			# threshold = 0.5   #FIX THRESHOLD!!
-			for threshold in np.arange(0.1, 1.0, 0.1):
-			# print(feature)
+			threshold_range = threshold_binary if feature in binary_columns else threshold_continous
+
+			for threshold in threshold_range:
+
 				children_nodes = self.split_node(threshold, feature)
 				if children_nodes == None:
 					continue
@@ -243,11 +263,10 @@ class Node:
 		sum_loss_value = 0
 
 		if self.left == None and self.right == None:
-			sum_loss_value += self.log_loss_value
-
+			return self.log_loss_value
 		else:
-			self.left.loss_values_of_all_leaf_nodes()
-			self.right.loss_values_of_all_leaf_nodes()
+			sum_loss_value += self.left.loss_values_of_all_leaf_nodes()
+			sum_loss_value += self.right.loss_values_of_all_leaf_nodes()
 
 		return sum_loss_value
 
@@ -264,8 +283,8 @@ class Node:
 # Outside Node class
 # Function to create root node from the given dataset
 def construct_root_node():
-	clf_root = linear_model.SGDClassifier(loss='log')
-	# clf_root = RandomForestClassifier()
+	# clf_root = linear_model.SGDClassifier(loss='log')
+	clf_root = RandomForestClassifier()
 	clf_root.fit(x_train, y_train) # Pass dataset into this function
 	clf_root_y_prediction = clf_root.predict(x_validate1)
 	loss_on_validation1 = log_loss(y_validate1, clf_root_y_prediction, normalize= False, labels = [0,1])
@@ -279,9 +298,9 @@ def construct_root_node():
 t0 = time.time()
 
 root_node = construct_root_node()
-root_node.create_sub_tree(3)
+root_node.create_sub_tree(inf)
 print(root_node)
-loss_on_leafs = root_node.loss_values_of_all_leaf_nodes
+loss_on_leafs = root_node.loss_values_of_all_leaf_nodes()
 print('Loss values of all leafs', loss_on_leafs)
 
 t1 = time.time()
