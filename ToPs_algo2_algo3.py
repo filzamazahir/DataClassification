@@ -72,13 +72,14 @@ x_validate1, x_validate2, y_validate1, y_validate2 = train_test_split(x_validate
 
 # Node class
 class Node:
-	def __init__(self, x_train, y_train, x_validate1, y_validate1, loss_on_validation1, predictor, current_depth):
+	def __init__(self, x_train, y_train, x_validate1, y_validate1, loss_on_validation1, loss_on_validation2, predictor, current_depth):
 		self.x_train = x_train # Root node will have full data set
 		self.y_train = y_train
 		self.x_validate1 = x_validate1
 		self.y_validate1 = y_validate1
 
 		self.log_loss_value = loss_on_validation1
+		self.log_loss_value2 = loss_on_validation2 #me
 		self.predictor = predictor # Instance of a classifier predictor
 		self.current_depth = current_depth
 
@@ -256,6 +257,11 @@ class Node:
 
 	# Algorithm 2 - Adding weights on the Path
 	def add_weights_on_path(self):
+		predictor_of_w = self.weight *self.log_loss_value
+		#choose w that minimizd loss on validation2:
+		
+
+	
 
 
 		return
@@ -270,7 +276,9 @@ def construct_root_node():
 	# clf_root = RandomForestClassifier()
 	clf_root.fit(x_train, y_train) # Pass dataset into this function
 	clf_root_y_prediction = clf_root.predict(x_validate1)
+	clf_root_y_prediction2 = clf_root.predict(x_validate2) #me
 	loss_on_validation1 = log_loss(y_validate1, clf_root_y_prediction, normalize= False, labels = [0,1])
+	loss_on_validation2 = log_loss(y_validate2, clf_root_y_prediction2, normalize= False, labels = [0,1]) #me
 
 	root_node = Node(x_train, y_train, x_validate1, y_validate1, loss_on_validation1, clf_root, 0)
 	return root_node
