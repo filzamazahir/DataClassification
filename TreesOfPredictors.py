@@ -18,7 +18,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.ensemble import AdaBoostClassifier
 
-from sklearn.metrics import log_loss
+from sklearn.metrics import log_loss, roc_auc_score
 
 from math import inf
 import time
@@ -34,6 +34,11 @@ news_df_original = pd.read_csv(file_location, sep=', ', engine='python')
 # Drop non-predictive attributes
 news_df = news_df_original.drop(['url', 'timedelta'], axis = 1)
 
+# Remove outliers here - FIX THIS!!!
+
+
+
+
 
 # Getting dataset ready for training
 news_y = news_df['shares']
@@ -41,6 +46,13 @@ news_y = news_y.apply(lambda x: 1 if x >=1400 else 0)
 
 news_x = news_df.drop(['shares'], axis = 1)
 class_names = ['Unpopular (<1400)', 'Popular (>=1400)']
+
+# Scale Data from 0 to 1, so threshold could be applied on it (news_y already on that scale)
+minmax = preprocessing.MinMaxScaler(feature_range=(0, 1)).fit_transform(news_x)
+news_x = pd.DataFrame(minmax, columns=list(news_x.columns.values))
+
+# Split dataset into test set - 20% for testing, rest for training and validation
+data_x, x_test, data_y, y_test = train_test_split(news_x, news_y, test_size=0.20, stratify=news_y)
 
 
 
@@ -55,7 +67,7 @@ def get_classifier_instance(name):
 	elif name == 'AdaBoost':
 		classifier = AdaBoostClassifier()
 	elif name == 'LinearSGD':
-		classifier = linear_model.SGDClassifier(loss='log', max_iter=10, tol=0.001)
+		classifier = linear_model.SGDClassifier(loss='log', max_iter=100, tol=0.001)
 
 	return classifier
 
@@ -65,16 +77,19 @@ def get_classifier_instance(name):
 ######################################################################
 # ToPs class - Initialize it with data and a set of classifiers to use
 class ToPs:
-	def __init__(self, data_x, data_y, classifiers):
+	def __init__(self, data_x, data_y, x_test, y_test, classifiers):
 		# Get dataset passed
 		self.data_x = data_x
 		self.data_y = data_y
+
+		self.x_test = x_test
+		self.y_test = y_test
 
 		self.classifiers = classifiers
 
 		self.root_node = None
 
-		# Get column names of all columns, and the ones with just binary values - should go in ToPs class eventually
+		# Get column names of all columns, and the ones with just binary values 
 		self.column_names = self.data_x.columns.values
 		self.binary_columns = set()
 
@@ -83,61 +98,350 @@ class ToPs:
 				self.binary_columns.add(column)
 
 		
-		# Split data here
-		self.x_train, self.y_train, self.x_validate1, self.y_validate1, self.x_validate2, self.y_validate2, self.x_test, self.y_test = self.split_data_into_test_train_validate()
+		# Scale all data, and then split data into training and validation sets here
+		self.x_train, self.y_train, self.x_validate1, self.y_validate1, self.x_validate2, self.y_validate2 = self.split_data_into_train_validate()
 
+		# Construct Root Node of the tree
+		self.construct_root_node() # sets self.root_node to a Node instance
 		return
 
-	def split_data_into_test_train_validate(self):
-		# Standardization of the data
-		# zscore = preprocessing.StandardScaler().fit_transform(news_x)
-		# news_x = pd.DataFrame(zscore, columns=list(news_x.columns.values)) #convert to nice table 
-		minmax = preprocessing.MinMaxScaler(feature_range=(0, 1)).fit_transform(self.data_x)
-		news_x = pd.DataFrame(minmax, columns=list(self.data_x.columns.values))  
 
-
-		# Dataset split - Training - 50%, Validation 1: 15%, Validation 2: 15%, Test: 20%
-		# Dataset x split: x_train, x_validate1, x_validate2, x_test
-		# Dataset y split: y_train, y_validate1, y_validate2, y_test
-		# Split dataset into test set - 20% for testing, rest for training and validation
-		x_rest, x_test, y_rest, y_test = train_test_split(self.data_x, self.data_y, test_size=0.20, stratify=self.data_y)
-
-		# Split again to get training and validation
-		x_train, x_validate, y_train, y_validate = train_test_split(x_rest, y_rest, test_size=0.375, stratify=y_rest)
+	# Dataset split - Training - 50%, Validation 1: 15%, Validation 2: 15%, Test: 20%
+	# From the given training set - 37.5% Validation, 62.5% Training
+	def split_data_into_train_validate(self):
+		
+		# Split data_x and data_y to get training and validation set
+		x_train, x_validate, y_train, y_validate = train_test_split(self.data_x, self.data_y, test_size=0.375, stratify=self.data_y)
 
 		# Split the validation set into two
 		x_validate1, x_validate2, y_validate1, y_validate2 = train_test_split(x_validate, y_validate, test_size=0.5, stratify=y_validate)
 
-		return(x_train, y_train, x_validate1, y_validate1, x_validate2, y_validate2, x_test, y_test)
+		return(x_train, y_train, x_validate1, y_validate1, x_validate2, y_validate2)
 
 
 	# Function to create root node from the given dataset
 	def construct_root_node(self):
-		# clf_root = linear_model.SGDClassifier(loss='log')
-		loss_values_list = [0 for i in range(len(self.classifiers))]
-		predictors = [0 for i in range(len(self.classifiers))]
+		loss_values_list = []
+		predictors = []
 		print('Root Node')
 		for clf in self.classifiers:
 			clf_root = get_classifier_instance(clf)
-			clf_root.fit(self.x_train, self.y_train) # Pass dataset into this function
-			clf_root_y_prediction = clf_root.predict(self.x_validate1)
-			loss_on_validation1 = log_loss(self.y_validate1, clf_root_y_prediction, normalize= False, labels = [0,1])
+			clf_root.fit(self.x_train, self.y_train) # Train the classifier of the root node on the full dataset
+			clf_root_y_pred_prob = clf_root.predict_proba(self.x_validate1)
+			loss_on_validation1 = log_loss(self.y_validate1, clf_root_y_pred_prob, normalize= False, labels = [0,1])
 
 			predictors.append(clf_root)
 			loss_values_list.append(loss_on_validation1)
 
 		predictor_index = loss_values_list.index(min(loss_values_list))
 
+		self.root_node = Node(self.x_train, self.y_train, self.x_validate1, self.y_validate1, self.x_validate2, self.y_validate2, self.x_test, self.y_test, loss_on_validation1, predictors[predictor_index], 0)
+		self.root_node.predictor_name = self.classifiers[predictor_index]
 
-		self.root_node = Node(self, self.x_train, self.y_train, self.x_validate1, self.y_validate1, self.x_validate2, self.y_validate2, loss_on_validation1, predictors[predictor_index], 0)
 		return
+
+
+
+
+	# Algorithm 1 - Figure out what the feature_to_split and threshold with minimum loss, then assign children based on that split
+	def create_sub_tree(self, node, max_depth):
+		print('Current Depth:', node.current_depth)
+		threshold_binary = [0.5]
+		threshold_continous = np.arange(0.1, 1.0, 0.1)
+
+		if node.current_depth >= max_depth:
+			return
+		minimum_loss_so_far = inf
+		feature_at_min_loss = None
+		threshold_at_min_loss = None
+		children_nodes_at_min_loss = None
+
+		# Iterate through all the features
+		for feature in self.column_names:
+			threshold_range = threshold_binary if feature in self.binary_columns else threshold_continous
+
+			# Iterate through the range of thresholds
+			for threshold in threshold_range:
+				threshold = round(threshold, 1)
+
+				children_nodes = self.split_node(node, feature, threshold)
+				if children_nodes == None:
+					continue
+
+				right_node = children_nodes[0]
+				left_node = children_nodes[1]
+
+				# Compare log loss values of parent and children
+				children_log_loss_validate1 = (right_node.loss_validate1 + left_node.loss_validate1)
+				if children_log_loss_validate1 < minimum_loss_so_far:
+					minimum_loss_so_far = children_log_loss_validate1
+					feature_at_min_loss = feature
+					threshold_at_min_loss = threshold
+					children_nodes_at_min_loss = children_nodes
+
+
+		if minimum_loss_so_far < node.loss_validate1:
+
+			# Assign threshold and feature_to_split, children attribute of this node
+			node.feature_to_split = feature_at_min_loss
+			node.threshold = threshold_at_min_loss
+
+			node.right = children_nodes_at_min_loss[0]
+			node.left = children_nodes_at_min_loss[1]
+
+			# Assign children of this node based on the min loss 
+			self.create_sub_tree(node.right, max_depth)
+			self.create_sub_tree(node.left, max_depth)
+	
+		return
+
+
+	# Algorithm 1 - Split a node based on a given feature and threshold- split available dataset too. 
+	def split_node(self, node, feature, threshold):
+		# print('Feature: {0}, Threshold: {1:.1f}, Classifier: {2}'.format(feature, threshold, classifier))
+
+		# Split the training data
+		left_x_train = node.x_train[node.x_train[feature] < threshold]
+		left_train_indices = left_x_train.index.values
+		left_y_train = node.y_train.loc[left_train_indices]
+
+		right_x_train = node.x_train[node.x_train[feature] >= threshold]
+		right_train_indices = right_x_train.index.values
+		right_y_train = node.y_train.loc[right_train_indices]
+
+		# Split the validation 1 data
+		left_x_validate1 = node.x_validate1[node.x_validate1[feature] < threshold]
+		left_validate1_indices = left_x_validate1.index.values
+		left_y_validate1 = node.y_validate1.loc[left_validate1_indices]
+
+		right_x_validate1 = node.x_validate1[node.x_validate1[feature] >= threshold]
+		right_validate1_indices = right_x_validate1.index.values
+		right_y_validate1 = node.y_validate1.loc[right_validate1_indices]
+
+		# Split the validation 2 data
+		left_x_validate2 = node.x_validate2[node.x_validate2[feature] < threshold]
+		left_validate2_indices = left_x_validate2.index.values
+		left_y_validate2 = node.y_validate2.loc[left_validate2_indices]
+
+		right_x_validate2 = node.x_validate2[node.x_validate2[feature] >= threshold]
+		right_validate2_indices = right_x_validate2.index.values
+		right_y_validate2 = node.y_validate2.loc[right_validate2_indices]
+
+		# Split the test data
+		left_x_test = node.x_test[node.x_test[feature] < threshold]
+		left_test_indices = left_x_test.index.values
+		left_y_test = node.y_test.loc[left_test_indices]
+
+		right_x_test = node.x_test[node.x_test[feature] >= threshold]
+		right_test_indices = right_x_test.index.values
+		right_y_test = node.y_test.loc[right_test_indices]
 		
+
+		# If data is too skewed one way and cannot be split 
+		if len(right_x_train) == 0 or len(left_x_train) == 0 or len(right_x_validate1) == 0 or len(left_x_validate1) == 0:
+			return None
+
+		# Train classifier on the left data
+		min_loss_left = inf
+		clf_left_at_min_loss = None
+		clf_left_name_at_min_loss = None
+		is_dummy_left = False
+
+		for classifier_name in self.classifiers:
+			if len(left_y_train.unique()) == 1:
+				clf_left = DummyClassifier()
+				clf_left_name_at_min_loss = 'DummyClassifier'
+				is_dummy_left = True
+			else:
+				clf_left = get_classifier_instance(classifier_name)
+
+			clf_left.fit(left_x_train, left_y_train) 
+			clf_left_y_predict_prob = clf_left.predict_proba(left_x_validate1)
+			log_loss_validation1_left = log_loss(left_y_validate1, clf_left_y_predict_prob, normalize = False, labels = [0,1])
+			
+			if log_loss_validation1_left < min_loss_left:
+				min_loss_left = log_loss_validation1_left
+				clf_left_at_min_loss = clf_left
+				
+			if is_dummy_left:
+				break
+			else:
+				clf_left_name_at_min_loss = classifier_name
+
+
+		# Train classifier on the right data
+		min_loss_right = inf
+		clf_right_at_min_loss = None
+		clf_right_name_at_min_loss = None
+		is_dummy_right = False
+
+		for classifier_name in self.classifiers:
+			if len(right_y_train.unique()) == 1:
+				clf_right = DummyClassifier()
+				clf_right_name_at_min_loss = 'DummyClassifier'
+				is_dummy_right = True
+			else:
+				clf_right = get_classifier_instance(classifier_name)
+
+			clf_right.fit(right_x_train, right_y_train)
+			clf_right_y_predict_prob = clf_right.predict_proba(right_x_validate1)
+			log_loss_validation1_right = log_loss(right_y_validate1, clf_right_y_predict_prob, normalize=False, labels = [0,1])
+
+			if log_loss_validation1_right < min_loss_right:
+				min_loss_right = log_loss_validation1_right
+				clf_right_at_min_loss = clf_right
+
+			if is_dummy_right:
+				break
+			else:
+				clf_right_name_at_min_loss = classifier_name
+
+		# Create nodes based on this split, and return
+		left_node = Node(left_x_train, left_y_train, left_x_validate1, left_y_validate1, left_x_validate2, left_y_validate2, left_x_test, left_y_test, log_loss_validation1_left, clf_left_at_min_loss, node.current_depth+1)
+		right_node = Node(right_x_train, right_y_train, right_x_validate1, right_y_validate1, right_x_validate2, right_y_validate2, right_x_test, right_y_test, log_loss_validation1_right, clf_right_at_min_loss, node.current_depth+1)
+		
+		left_node.predictor_name = clf_left_name_at_min_loss
+		right_node.predictor_name = clf_right_name_at_min_loss
+
+		return(right_node, left_node)
+	
+
+
+
+	# Algorithm 2 - Get predictors from root to leaf, and add weights using linear classifier
+	def add_weights_to_predictors_on_path(self, node, predictors_on_path):
+
+		# If leaf node - create a dataframe with predicted values from all predictors on the path
+		if node.left==None and node.right==None:
+			all_predictors_on_path = predictors_on_path + [node.predictor]
+			# print("All predictors on path: \n", all_predictors_on_path) 
+			node.leaf_all_predictors_on_path = all_predictors_on_path
+
+			if len(node.x_validate2) > 0 and len(node.y_validate2.unique()) == 2:
+				# Loop through all predictors on path from root to leaf, and add predictions to data dict
+				data = {}
+				for i, clf in enumerate(all_predictors_on_path):
+					y_pred_validate2 = clf.predict(node.x_validate2)
+					data["classifier " + str(i)] = y_pred_validate2
+
+				# Create dataframe from the data dict
+				all_predictions_on_path_df = pd.DataFrame(data)
+
+				# Apply linear classifier based on all the predictions on root to leaf path
+				clf_linear_classifier = linear_model.SGDClassifier(loss='log', max_iter=200, tol=0.001)
+				clf_linear_classifier.fit(all_predictions_on_path_df, node.y_validate2)
+				node.leaf_classifier = clf_linear_classifier
+				# print("Weights learned: ", clf_linear_classifier.coef_) # Weights assigned as per algorithm 2
+
+		# Continue traversing through tree and add predictors until leaf node
+		else:
+			if node.left:
+				self.add_weights_to_predictors_on_path(node.left, predictors_on_path + [node.predictor])
+			if node.right:
+				self.add_weights_to_predictors_on_path(node.right, predictors_on_path + [node.predictor])
+
+
+
+
+	# Algorithm 3 - Traverse the tree and use test values to predict y probability
+	def _predict_traverse_tree(self, node):
+
+		# If leaf node - create a dataframe with predicted values from all predictors on the path
+		if node.left==None and node.right==None:
+
+			# Loop through all predictors on path from root to leaf, and add predictions to data dict
+			data = {}
+			for i, clf in enumerate(node.leaf_all_predictors_on_path):
+				if len(node.x_test) > 0:
+					y_pred_test = clf.predict(node.x_test)
+				else:
+					y_pred_test = []
+
+				data["classifier " + str(i)] = y_pred_test
+
+			# Create dataframe from the data dict
+			all_predictions_on_path_test_df = pd.DataFrame(data)
+
+			# Apply linear regressor based on all the predictions on root to leaf path
+			if node.leaf_classifier:
+				if len(node.x_test) > 0:
+					y_pred_prob_final = node.leaf_classifier.predict_proba(all_predictions_on_path_test_df)
+					y_pred_prob_final = y_pred_prob_final[:, 1]
+				else:
+					y_pred_prob_final = []
+
+			# No leaf regressor - length of validate2 was 0 
+			else:
+				y_pred_prob_final = all_predictions_on_path_test_df.sum(axis=1)/len(all_predictions_on_path_test_df.columns)
+
+			print('Leaf - Predictions for {0} values'.format(len(y_pred_prob_final)))
+			return(node.y_test, pd.DataFrame(y_pred_prob_final))	
+
+		# Continue traversing through tree until leaf node
+		else:
+			if node.left:
+				y_test_left, y_pred_prob_final_left = self._predict_traverse_tree(node.left)
+			if node.right:
+				y_test_right, y_pred_prob_final_right = self._predict_traverse_tree(node.right)
+
+			# Combine the test and predict values for the leafs at the parent
+			y_test_parent = pd.concat([y_test_left, y_test_right])
+			y_pred_prob_final_parent = pd.concat([y_pred_prob_final_left, y_pred_prob_final_right])
+
+			print('Parent - Predictions for {0} values'.format(len(y_pred_prob_final_parent)))
+			return (y_test_parent, y_pred_prob_final_parent)
+
+
+
+
+	# Algorithm 1 and 2 Wrapper - Create a Tree Of Predictors
 	def create_tree(self, maxdepth):
-		self.construct_root_node() #Node Instance
-		self.root_node.create_sub_tree(maxdepth)
+
+		self.create_sub_tree(self.root_node, maxdepth) # Algorithm 1
+		self.add_weights_to_predictors_on_path(self.root_node, []) # Algorithm 2
 
 		return
 
+
+
+
+	# Algorithm 3 - Wrapper - Get probability of y_predict done on the test method
+	def predict_proba(self): 
+
+		y_true, y_pred_proba = self._predict_traverse_tree(self.root_node)
+
+		# Reset index
+		y_true = y_true.reset_index(drop=True)
+		y_pred_proba = y_pred_proba.reset_index(drop=True)
+
+		result_df = pd.concat([y_true, y_pred_proba], axis=1)
+		result_df.columns = ['y_true', 'y_pred_proba']
+		result_df.to_csv('ToPs_result.csv', index=False)
+
+		return y_true, y_pred_proba
+
+
+
+	# Helper function - Calculating loss values of all leaf nodes
+	def _loss_validation1_of_all_leaf_nodes(self, node):
+		sum_loss_value = 0
+
+		if node.left == None and node.right == None:
+			return node.loss_validate1
+		else:
+			sum_loss_value += self._loss_validation1_of_all_leaf_nodes(node.left)
+			sum_loss_value += self._loss_validation1_of_all_leaf_nodes(node.right)
+
+		return sum_loss_value
+
+
+	# Helper function wrapper - Calculating loss values of all leaf nodes
+	def loss_validation1_of_all_leaf_nodes(self):
+		return self._loss_validation1_of_all_leaf_nodes(self.root_node)
+
+
+
+	# Helper function - Get depth of tree
 	def _get_depth_of_tree(self, node):
 		current_depth = 0
 		depth_left = 0
@@ -152,9 +456,10 @@ class ToPs:
 
 		return current_depth
 
+
+	# Helper function - Get depth of tree
 	def get_depth_of_tree(self):
 		return self._get_depth_of_tree(self.root_node)-1  # -1 because root is included
-
 
 
 
@@ -165,8 +470,7 @@ class ToPs:
 ##################################################################
 # Node class
 class Node:
-	def __init__(self, tree, x_train, y_train, x_validate1, y_validate1, x_validate2, y_validate2, loss_validate1, predictor, current_depth):
-		self.tree = tree
+	def __init__(self, x_train, y_train, x_validate1, y_validate1, x_validate2, y_validate2, x_test, y_test, loss_validate1, predictor, current_depth):
 
 		# Data available to the particular node (root node will have full data set)
 		self.x_train = x_train 
@@ -175,6 +479,8 @@ class Node:
 		self.y_validate1 = y_validate1
 		self.x_validate2 = x_validate2
 		self.y_validate2 = y_validate2
+		self.x_test = x_test
+		self.y_test = y_test
 
 		# Set upon initialization
 		self.loss_validate1 = loss_validate1
@@ -193,8 +499,9 @@ class Node:
 		# Set in add_weight function
 		self.loss_validate2 = None
 
-		# # Weight of each node (Algorithm 2)
-		# self.weight = None
+		# Regressor on leaf node with weights for all predictors on the path from root to leaf
+		self.leaf_classifier = None
+		self.leaf_all_predictors_on_path = None
 
 
 	def __str__(self):
@@ -203,7 +510,7 @@ class Node:
 		string_to_print = prefix + 'Current Depth: ' + str(self.current_depth) + '\n'
 		string_to_print += prefix + 'Feature to split: ' + str(self.feature_to_split) + '\n'
 		string_to_print += prefix + 'Threshold: ' + str(self.threshold) +'\n'
-		string_to_print += prefix + 'Predictor: ' + str(self.predictor_name) + '\n'
+		string_to_print += prefix + 'Predictor Name: ' + str(self.predictor_name) + '\n'
 		string_to_print += prefix + 'Log Loss (Validation 1): ' + str(self.loss_validate1) + '\n'
 		if self.left == None:
 			string_to_print += prefix + 'Left Child: ' + str(self.left) + '\n'
@@ -221,153 +528,8 @@ class Node:
 	
 
 
-	# Split a node based on a given feature and threshold:
-	def split_node(self, feature, threshold, classifier):
-		# print('Feature: {0}, Threshold: {1:.1f}, Classifier: {2}'.format(feature, threshold, classifier))
-
-		# Split the training data
-		left_x_train = self.x_train[self.x_train[feature] < threshold]
-		left_train_indices = left_x_train.index.values
-		left_y_train = self.y_train.loc[left_train_indices]
-
-		right_x_train = self.x_train[self.x_train[feature] >= threshold]
-		right_train_indices = right_x_train.index.values
-		right_y_train = self.y_train.loc[right_train_indices]
-
-		# Split the validation 1 data
-		left_x_validate1 = self.x_validate1[self.x_validate1[feature] < threshold]
-		left_validate1_indices = left_x_validate1.index.values
-		left_y_validate1 = self.y_validate1.loc[left_validate1_indices]
-
-		right_x_validate1 = self.x_validate1[self.x_validate1[feature] >= threshold]
-		right_validate1_indices = right_x_validate1.index.values
-		right_y_validate1 = self.y_validate1.loc[right_validate1_indices]
-
-		# Split the validation 2 data
-		left_x_validate2 = self.x_validate2[self.x_validate2[feature] < threshold]
-		left_validate2_indices = left_x_validate2.index.values
-		left_y_validate2 = self.y_validate2.loc[left_validate2_indices]
-
-		right_x_validate2 = self.x_validate2[self.x_validate2[feature] >= threshold]
-		right_validate2_indices = right_x_validate2.index.values
-		right_y_validate2 = self.y_validate2.loc[right_validate2_indices]
-
-		
-
-		# If data is too skewed one way and cannot be split 
-		if len(right_x_train) == 0 or len(left_x_train) == 0 or len(right_x_validate1) == 0 or len(left_x_validate1) == 0:
-			return None
-
-		# Train classifier on the right data
-		if len(right_y_train.unique()) == 1:
-			clf_right = DummyClassifier()
-		else:
-			clf_right = get_classifier_instance(classifier)
-		clf_right.fit(right_x_train, right_y_train)
-		clf_right_y_prediction = clf_right.predict(right_x_validate1)
-		log_loss_validation1_right = log_loss(right_y_validate1, clf_right_y_prediction, normalize=False, labels = [0,1])
-
-		# Train classifier on the left data
-		if len(left_y_train.unique()) == 1:
-			clf_left = DummyClassifier()
-		else:
-			clf_left = get_classifier_instance(classifier)
-		clf_left.fit(left_x_train, left_y_train) 
-		clf_left_y_prediction = clf_left.predict(left_x_validate1)
-		log_loss_validation1_left = log_loss(left_y_validate1, clf_left_y_prediction, normalize = False, labels = [0,1])
-		
-		# Create nodes based on this split, and return
-		right_node = Node(self.tree, right_x_train, right_y_train, right_x_validate1, right_y_validate1, right_x_validate2, right_y_validate2, log_loss_validation1_right, clf_right, self.current_depth+1)
-		left_node = Node(self.tree, left_x_train, left_y_train, left_x_validate1, left_y_validate1, left_x_validate2, left_y_validate2, log_loss_validation1_left, clf_left, self.current_depth+1)
-	
-		return(right_node, left_node)
-
-
-
-	# Create a sub_tree (ToPs)
-	# Figure out what the feature_to_split and threshold with minimum loss, then assign children based on that split
-	def create_sub_tree(self, max_depth):
-		print('Current Depth:', self.current_depth)
-		threshold_binary = [0.5]
-		threshold_continous = np.arange(0.1, 1.0, 0.1)
-
-		if self.current_depth >= max_depth:
-			print('Depth reached - no need to split further')
-			return
-		minimum_loss_so_far = inf
-		feature_at_min_loss = None
-		threshold_at_min_loss = None
-		classifier_name_at_min_loss = None
-		children_nodes_at_min_loss = None
-
-
-		for feature in self.tree.column_names:
-			threshold_range = threshold_binary if feature in self.tree.binary_columns else threshold_continous
-
-			for threshold in threshold_range:
-				threshold = round(threshold, 1)
-
-				for classifier_name in self.tree.classifiers:
-
-					children_nodes = self.split_node(feature, threshold, classifier_name)
-					if children_nodes == None:
-						continue
-
-					right_node = children_nodes[0]
-					left_node = children_nodes[1]
-
-					# Compare log loss values of parent and children
-					children_log_loss_validate1 = (right_node.loss_validate1 + left_node.loss_validate1)
-					if children_log_loss_validate1 < minimum_loss_so_far:
-						minimum_loss_so_far = children_log_loss_validate1
-						feature_at_min_loss = feature
-						threshold_at_min_loss = threshold
-						classifier_name_at_min_loss = classifier_name
-						children_nodes_at_min_loss = children_nodes
-
-
-		if minimum_loss_so_far >= self.loss_validate1:
-			print('END FUNCTION - All Children loss values bigger!!', minimum_loss_so_far)
-
-
-		else: 
-			print('---Parent loss bigger', self.loss_validate1) # we want this
-			print('---All Children losses (smaller): ', minimum_loss_so_far)
-			print('---Feature with this small loss:', feature_at_min_loss)
-
-			# Assign threshold and feature_to_split, children attribute of this node
-			self.feature_to_split = feature_at_min_loss
-			self.threshold = threshold_at_min_loss
-			self.predictor_name = classifier_name_at_min_loss
-
-			self.right = children_nodes_at_min_loss[0]
-			self.left = children_nodes_at_min_loss[1]
-
-			# Assign children of this node based on the min loss 
-			self.right.create_sub_tree(max_depth)
-			self.left.create_sub_tree(max_depth)
-	
-		return
-
-		# Calculating loss values of all leaf nodes
-	def loss_validation1_of_all_leaf_nodes(self):
-		sum_loss_value = 0
-
-		if self.left == None and self.right == None:
-			return self.loss_validate1
-		else:
-			sum_loss_value += self.left.loss_validation1_of_all_leaf_nodes()
-			sum_loss_value += self.right.loss_validation1_of_all_leaf_nodes()
-
-		return sum_loss_value
 	
 
-
-	# Algorithm 2 - Adding weights on the Path
-	def add_weights_on_path(self):
-
-
-		return
 
 
 
@@ -379,20 +541,38 @@ class Node:
 t0 = time.time()
 
 # news_ToPs = Tops(news_x, news_y, ['RandomForest', 'ExtraTrees', 'AdaBoost'])
-# news_ToPs = Tops(news_x, news_y, ['LinearSGD', 'RandomForest'])
-news_ToPs = ToPs(news_x, news_y, ['LinearSGD'])
-news_ToPs.create_tree(3)
-loss_on_leafs = news_ToPs.root_node.loss_validation1_of_all_leaf_nodes()
+news_ToPs = ToPs(data_x, data_y, x_test, y_test, ['LinearSGD'])
+
+news_ToPs.create_tree(3) # Algorithm 1 & 2 - Create tree
+y_true, y_pred_prob = news_ToPs.predict_proba() # Algorithm 3 - Test
+
+print("Y True: ", y_true)
+print("Y Pred Prob: ", y_pred_prob)
+
+# Evaluation metrics
+final_log_loss = log_loss(y_true, y_pred_prob)
+final_roc_auc_score = roc_auc_score(y_true, y_pred_prob)
+
+loss_on_leafs = news_ToPs.loss_validation1_of_all_leaf_nodes()
 depth_of_tree = news_ToPs.get_depth_of_tree()
 
 print(news_ToPs.root_node)
 f.write(str(news_ToPs.root_node))
+
+f.write('\ny_true_test\n{0}\n'.format(y_true))
+f.write('\ny_pred_prob\n{0}\n'.format(y_pred_prob))
 
 print('\nLoss values of all leafs {0}'.format(loss_on_leafs))
 f.write('\nLoss values of all leafs {0}'.format(loss_on_leafs))
 
 print('\nMax Depth of Tree: {0}'.format(depth_of_tree))
 f.write('\nMax Depth of Tree: {0}'.format(depth_of_tree))
+
+print('\nFinal Log loss: {0}'.format(final_log_loss))
+f.write('\nFinal Log loss: {0}'.format(final_log_loss))
+		
+print('\nFinal ROC AUC Score: {0}'.format(final_roc_auc_score))
+f.write('\nFinal ROC AUC Score: {0}'.format(final_roc_auc_score))
 		
 t1 = time.time()
 
