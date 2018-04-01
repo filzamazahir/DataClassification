@@ -9,7 +9,8 @@
 # Import Libraries 
 import pandas as pd
 import numpy as np
-
+from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import accuracy_score
 from scipy.stats import zscore
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
@@ -20,8 +21,6 @@ from sklearn.model_selection import cross_val_score
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import classification_report
 from sklearn.metrics import precision_recall_curve
-
-
 import matplotlib as mpl 
 mpl.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -72,7 +71,7 @@ news_x = pd.DataFrame(minmax, columns=list(news_x.columns.values))
 
 # Split dataset into test and train set - 20% ( instances out of ) used for testing
 news_x_train, news_x_test, news_y_train, news_y_test = train_test_split(news_x, news_y, test_size=0.20, stratify=news_y)
-# news_x_test_reset = news_x_test.reset_index(drop=True)
+news_x_test_reset = news_x_test.reset_index(drop=True)
 
 
 
@@ -85,20 +84,20 @@ rf_clf = RandomForestClassifier()
 rf_clf.fit(news_x_train, news_y_train)  # Train the data
 rfc_prediction = rf_clf.predict(news_x_test)  # Predict using test data, and calculate score
 
-# rfc_score = rf_clf.score(news_x_test, news_y_test)
-# print('Random Forest Classifier Score: ', rfc_score)
+rfc_score = rf_clf.score(news_x_test, news_y_test)
+print('Random Forest Classifier Score: ', rfc_score)
 
 # # Merge testing data with Random Forest Classifier predictions for plots
-# rfc_prediction_df = pd.DataFrame(rfc_prediction, columns=['y'])
-# rfc_df = pd.concat([news_x_test_reset, rfc_prediction_df], axis=1)
+rfc_prediction_df = pd.DataFrame(rfc_prediction, columns=['y'])
+rfc_df = pd.concat([news_x_test_reset, rfc_prediction_df], axis=1)
 
-rfc_accuracy = cross_val_score(rf_clf, news_x, news_y, scoring='accuracy')
+rfc_accuracy = accuracy_score(news_y_test, rfc_prediction)
 print('Accuracy: {0:.3f} ({1:.3f})'.format(rfc_accuracy.mean(), rfc_accuracy.std()))
 
-rfc_log_loss = cross_val_score(rf_clf, news_x, news_y, scoring='neg_log_loss')
+rfc_log_loss = log_loss(news_y_test, rfc_prediction)
 print('Logarithmic Loss: {0:.3f} ({1:.3f})'.format(rfc_log_loss.mean(), rfc_log_loss.std()))
 
-rfc_area_roc = cross_val_score(rf_clf, news_x, news_y, scoring='roc_auc')
+rfc_area_roc = roc_auc_score(news_y_test, rfc_prediction)
 print('Area under ROC Curve: {0:.3f} ({1:.3f})'.format(rfc_area_roc.mean(), rfc_area_roc.std()))
 
 rfc_confusion_matrix = confusion_matrix(news_y_test, rfc_prediction)
@@ -108,10 +107,16 @@ rfc_classification_report = classification_report(news_y_test, rfc_prediction, t
 print(' Classification Report:')
 print(rfc_classification_report)
 
-# rfc_precision, rfc_recall, rfc_threshold = precision_recall_curve(news_y_test, rfc_prediction)
-# print('Precission: ', rfc_precision)
-# print('Recall: ', rfc_recall)
-# print('Threshold: ', rfc_threshold)
+#ROC:
+fpr, tpr, thresholds = roc_curve(news_y_test, rfc_prediction)
+rfc_roc_auc = auc(fpr, tpr)
+plt.plot(fpr,tpr,label=' (Random Forest AUC = %0.2f)' % (rfc_roc_auc), color='g') 
+
+
+## rfc_precision, rfc_recall, rfc_threshold = precision_recall_curve(news_y_test, rfc_prediction)
+## print('Precission: ', rfc_precision)
+## print('Recall: ', rfc_recall)
+## print('Threshold: ', rfc_threshold)
 
 print('\n')
 
@@ -125,20 +130,20 @@ xt_clf = ExtraTreesClassifier()
 xt_clf.fit(news_x_train, news_y_train)  # Train the data
 xtc_prediction = xt_clf.predict(news_x_test)  # Predict using test data
 
-# xtc_score = xt_clf.score(news_x_test, news_y_test)
-# print('Extra Trees Classifier Score: ', xtc_score)
+xtc_score = xt_clf.score(news_x_test, news_y_test)
+print('Extra Trees Classifier Score: ', xtc_score)
 
 # # Merge testing data with Extra Trees Classifier predictions for plots
-# xtc_prediction_df = pd.DataFrame(xtc_prediction, columns=['y'])
-# xtc_df = pd.concat([news_x_test_reset, xtc_prediction_df], axis=1)
+xtc_prediction_df = pd.DataFrame(xtc_prediction, columns=['y'])
+xtc_df = pd.concat([news_x_test_reset, xtc_prediction_df], axis=1)
 
-xtc_accuracy = cross_val_score(xt_clf, news_x, news_y, scoring='accuracy')
+xtc_accuracy = accuracy_score(news_y_test, xtc_prediction)
 print('Accuracy: {0:.3f} ({1:.3f})'.format(xtc_accuracy.mean(), xtc_accuracy.std()))
 
-xtc_log_loss = cross_val_score(xt_clf, news_x, news_y, scoring='neg_log_loss')
+xtc_log_loss = log_loss(news_y_test, xtc_prediction)
 print('Logarithmic Loss: {0:.3f} ({1:.3f})'.format(xtc_log_loss.mean(), xtc_log_loss.std()))
 
-xtc_area_roc = cross_val_score(xt_clf, news_x, news_y, scoring='roc_auc')
+xtc_area_roc = roc_auc_score(news_y_test, xtc_prediction)
 print('Area under ROC Curve: {0:.3f} ({1:.3f})'.format(xtc_area_roc.mean(), xtc_area_roc.std()))
 
 xtc_confusion_matrix = confusion_matrix(news_y_test, xtc_prediction)
@@ -148,10 +153,15 @@ xtc_classification_report = classification_report(news_y_test, xtc_prediction, t
 print(' Classification Report:')
 print(xtc_classification_report)
 
-# xtc_precision, xtc_recall, xtc_threshold = precision_recall_curve(news_y_test, xtc_prediction)
-# print('Precission: ', xtc_precision)
-# print('Recall: ', xtc_recall)
-# print('Threshold: ', xtc_threshold)
+#ROC
+fpr, tpr, thresholds = roc_curve(news_y_test, rfc_prediction)
+rfc_roc_auc = auc(fpr, tpr)
+plt.plot(fpr,tpr,label=' (Extra Tree AUC = %0.2f)' % (rfc_roc_auc), color='r') 
+
+## xtc_precision, xtc_recall, xtc_threshold = precision_recall_curve(news_y_test, xtc_prediction)
+## print('Precission: ', xtc_precision)
+## print('Recall: ', xtc_recall)
+## print('Threshold: ', xtc_threshold)
 
 print('\n')
 
@@ -165,20 +175,20 @@ ada_clf = AdaBoostClassifier()
 ada_clf.fit(news_x_train, news_y_train)  # Train the data
 ada_prediction = ada_clf.predict(news_x_test)  # Predict using test data
 
-# ada_score = ada_clf.score(news_x_test, news_y_test)
-# print('AdaBoost Classifier Score: ', ada_score)
+ada_score = ada_clf.score(news_x_test, news_y_test)
+print('AdaBoost Classifier Score: ', ada_score)
 
 # # Merge testing data with AdaBoost Classifier predictions for plots
-# ada_prediction_df = pd.DataFrame(ada_prediction, columns=['y'])
-# ada_df = pd.concat([news_x_test_reset, ada_prediction_df], axis=1)
+ada_prediction_df = pd.DataFrame(ada_prediction, columns=['y'])
+ada_df = pd.concat([news_x_test_reset, ada_prediction_df], axis=1)
 
-ada_accuracy = cross_val_score(ada_clf, news_x, news_y, scoring='accuracy')
+ada_accuracy = accuracy_score(news_y_test, ada_prediction)
 print('Accuracy: {0:.3f} ({1:.3f})'.format(ada_accuracy.mean(), ada_accuracy.std()))
 
-ada_log_loss = cross_val_score(ada_clf, news_x, news_y, scoring='neg_log_loss')
+ada_log_loss = log_loss(news_y_test, ada_prediction)
 print('Logarithmic Loss: {0:.3f} ({1:.3f})'.format(ada_log_loss.mean(), ada_log_loss.std()))
 
-ada_area_roc = cross_val_score(ada_clf, news_x, news_y, scoring='roc_auc')
+ada_area_roc = roc_auc_score(news_y_test, ada_prediction)
 print('Area under ROC Curve: {0:.3f} ({1:.3f})'.format(ada_area_roc.mean(), ada_area_roc.std()))
 
 ada_confusion_matrix = confusion_matrix(news_y_test, ada_prediction)
@@ -188,10 +198,14 @@ ada_classification_report = classification_report(news_y_test, ada_prediction, t
 print(' Classification Report:')
 print(ada_classification_report)
 
-# ada_precision, ada_recall, ada_threshold = precision_recall_curve(news_y_test, ada_prediction)
-# print('Precission: ', ada_precision)
-# print('Recall: ', ada_recall)
-# print('Threshold: ', ada_threshold)
+#ROC
+fpr, tpr, thresholds = roc_curve(news_y_test, rfc_prediction)
+rfc_roc_auc = auc(fpr, tpr)
+plt.plot(fpr,tpr,label=' (AdaBoost AUC = %0.2f)' % (rfc_roc_auc), color='b') 
+## ada_precision, ada_recall, ada_threshold = precision_recall_curve(news_y_test, ada_prediction)
+## print('Precission: ', ada_precision)
+## print('Recall: ', ada_recall)
+## print('Threshold: ', ada_threshold)
 
 print('\n')
 
@@ -216,27 +230,71 @@ print('\n')
 # TREES OF PREDICTORS CLASSIFIER (ToPs)
 
 t0 = time.time()
-print('TREES OF PREDICTORS - ToPs')
-# news_ToPs = ToPs(news_x_train, news_y_train, news_x_test, news_y_test, ['RandomForest', 'ExtraTrees', 'AdaBoost'])  # ToPs made of RandomForest, ExtraTrees and AdaBoost
-news_ToPs = ToPs(news_x_train, news_y_train, news_x_test, news_y_test, ['LinearSGD'])  #ToPs made of Linear SGD Classifier
-news_ToPs.create_tree(3) # Algorithm 1 & 2 - Create tree
-y_true, y_pred_prob = news_ToPs.predict_proba() # Algorithm 3 - Test
+print('TREES OF PREDICTORS - ToPs_linear')
+news_ToPs_three_clf = ToPs(news_x_train, news_y_train, news_x_test, news_y_test, ['RandomForest', 'ExtraTrees', 'AdaBoost'])  # ToPs made of RandomForest, ExtraTrees and AdaBoost
+news_ToPs_three_clf.create_tree(3) # Algorithm 1 & 2 - Create tree
+y_true_three_clf, y_pred_prob_three_clf = news_ToPs_three_clf.predict_proba() # Algorithm 3 - Test
+news_ToPs_linear = ToPs(news_x_train, news_y_train, news_x_test, news_y_test, ['LinearSGD'])  #ToPs made of Linear SGD Classifier
+news_ToPs_linear.create_tree(3) # Algorithm 1 & 2 - Create tree
+y_true_linear, y_pred_prob_linear = news_ToPs_linear.predict_proba() # Algorithm 3 - Test
 
 # print("Y True: ", y_true)
 # print("Y Pred Prob: ", y_pred_prob)
 # print(news_ToPs.root_node)
 
-# Evaluation metrics - ToPs
-log_loss_ToPs = log_loss(y_true, y_pred_prob)
-print('Logarithmic Loss: {0:.3f}'.format(log_loss_ToPs))
-f.write('\nogarithmic Loss: {0:.3f}'.format(log_loss_ToPs))
+# Evaluation metrics - ToPs_linear
+log_loss_ToPs_linear = log_loss(y_true_linear, y_pred_prob_linear)
+print('Logarithmic Loss: {0:.3f}'.format(log_loss_ToPs_linear))
+f.write('\nogarithmic Loss: {0:.3f}'.format(log_loss_ToPs_linear))
 
-roc_auc_score_ToPs = roc_auc_score(y_true, y_pred_prob)
-print('Area under ROC Curve: {0:.3f}'.format(roc_auc_score_ToPs))
-f.write('\nArea under ROC Curve: {0:.3f}'.format(roc_auc_score_ToPs))
+roc_auc_score_ToPs = roc_auc_score(y_true_linear, y_pred_prob_linear)
+print('Area under ROC Curve: {0:.3f}'.format(roc_auc_score_ToPs_linear))
+f.write('\nArea under ROC Curve: {0:.3f}'.format(roc_auc_score_ToPs_linear))
 
-# NEED ACCURACY, CONFUSION MATRIX, and CLASSIFICATION REPORT STILL - FIX THIS!!
+accuracy_ToPs = accuracy_score(y_true_linear, y_pred_prob_linear) 
+print('Accuracy: {0:.3f} ({1:.3f})'.format(accuracy_ToPs.mean(), accuracy_ToPs.std()))
 
+confusion_matrix_ToPs_linear = confusion_matrix(y_true_linear, y_pred_prob_linear)
+print('Confusion Matrix: \n', confusion_matrix_ToPs_linear)
+
+classification_report_ToPs_linear = classification_report(y_true_linear, y_pred_prob_linear, target_names=class_names)
+print(' Classification Report:')
+print(classification_report_ToPs_linear)
+
+# Evaluation metrics - ToPs_three_clf
+log_loss_ToPs_three_clf = log_loss(y_true_three_clf, y_pred_prob_three_clf)
+print('Logarithmic Loss: {0:.3f}'.format(log_loss_ToPs_three_clf))
+f.write('\nogarithmic Loss: {0:.3f}'.format(log_loss_ToPs_three_clf))
+
+roc_auc_score_ToPs_three_clf = roc_auc_score(y_true__three_clf, y_pred_prob__three_clf)
+print('Area under ROC Curve: {0:.3f}'.format(roc_auc_score_ToPs_three_clf))
+f.write('\nArea under ROC Curve: {0:.3f}'.format(roc_auc_score_ToPs__three_clf))
+
+accuracy_ToPs_three_clf = accuracy_score(y_true_three_clf, y_pred_prob_three_clf) 
+print('Accuracy: {0:.3f} ({1:.3f})'.format(accuracy_ToPs_three_clf.mean(), accuracy_ToPs_three_clf.std()))
+f.write('\nAccuracy: {0:.3f}'.format(accuracy_ToPs_three_clf.mean(), accuracy_ToPs_three_clf.std()))
+
+confusion_matrix_ToPs_three_clf = confusion_matrix(y_true_three_clf, y_pred_prob_three_clf)
+print('Confusion Matrix: \n', confusion_matrix_ToPs_three_clf)
+f.write('\nConfusion Matrix: {0:.3f}'.format(confusion_matrix_ToPs_three_clf))
+
+classification_report_ToPs_three_clf = classification_report(y_true_three_clf, y_pred_prob_three_clf, target_names=class_names)
+print(' Classification Report:')
+print(classification_report_ToPs_three_clf)
+f.write('\nClassification Report: {0:.3f}'.format(classification_report_ToPs_three_clf))
+
+#ROC curve for ToPs Linear and ToPs 3 Classifiers:
+fpr, tpr, thresholds = roc_curve(y_true_linear, y_pred_prob_linear)
+roc_auc_ToPs_linear = auc(fpr, tpr)
+plt.plot(fpr,tpr,label=' (ToPs Linear AUC = %0.2f)' % (roc_auc_ToPs_linear), color='y') 
+fpr, tpr, thresholds = roc_curve(y_true_three_clf, y_pred_prob_three_clf)
+roc_auc_ToPs_three_clf = auc(fpr, tpr)
+plt.plot(fpr,tpr,label=' (ToPs 3 clf AUC = %0.2f)' % (roc_auc_ToPs_three_clf),color='m') 
+plt.title('ROC Curve')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.legend(loc="lower right")
+plt.show()
 
 # Output ToPs results to output.txt
 f.write('\n\n----- ToPs -----\n\n')

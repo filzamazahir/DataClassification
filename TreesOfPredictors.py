@@ -20,7 +20,7 @@ from sklearn.ensemble import AdaBoostClassifier
 
 from sklearn.metrics import log_loss, roc_auc_score
 
-from math import inf
+#from math import inf
 
 
 
@@ -119,7 +119,8 @@ class ToPs:
 
 		if node.current_depth >= max_depth:
 			return
-		minimum_loss_so_far = inf
+		#minimum_loss_so_far = inf
+		minimum_loss_so_far =float('inf')
 		feature_at_min_loss = None
 		threshold_at_min_loss = None
 		children_nodes_at_min_loss = None
@@ -210,7 +211,8 @@ class ToPs:
 			return None
 
 		# Train classifier on the left data
-		min_loss_left = inf
+		#min_loss_left = inf
+		min_loss_left= float('inf')
 		clf_left_at_min_loss = None
 		clf_left_name_at_min_loss = None
 		is_dummy_left = False
@@ -238,7 +240,8 @@ class ToPs:
 
 
 		# Train classifier on the right data
-		min_loss_right = inf
+		#min_loss_right = inf
+		min_loss_right = float('inf')
 		clf_right_at_min_loss = None
 		clf_right_name_at_min_loss = None
 		is_dummy_right = False
