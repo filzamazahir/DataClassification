@@ -68,6 +68,9 @@ class_names = ['Unpopular (<1400)', 'Popular (>=1400)']
 # Scale Data from 0 to 1, so threshold could be applied on it (news_y already on that scale)
 minmax = preprocessing.MinMaxScaler(feature_range=(0, 1)).fit_transform(news_x)
 news_x = pd.DataFrame(minmax, columns=list(news_x.columns.values))
+#using rolling mean:
+# Using moving mean to fix outliers:
+news_x = news_x.rolling(15, min_periods=1).mean() # values after filtering outliers is saved in news_df again
 
 # Split dataset into test and train set - 20% ( instances out of ) used for testing
 news_x_train, news_x_test, news_y_train, news_y_test = train_test_split(news_x, news_y, test_size=0.20, stratify=news_y)
