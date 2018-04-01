@@ -27,6 +27,10 @@ mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib import pyplot
 
+
+# Import ToPs class
+from TreesOfPredictors import *
+
 # Load the online news popularity dataset and store it as a pandas dataframe
 file_location = 'OnlineNewsPopularity.csv'
 news_df_original = pd.read_csv(file_location, sep=', ', engine='python')
