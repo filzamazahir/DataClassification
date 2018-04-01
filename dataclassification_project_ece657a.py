@@ -27,9 +27,16 @@ mpl.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib import pyplot
 
+import time
+
 
 # Import ToPs class
 from TreesOfPredictors import *
+
+
+# Open an output text file to output the Tree
+f = open('output.txt', 'w')
+
 
 # Load the online news popularity dataset and store it as a pandas dataframe
 file_location = 'OnlineNewsPopularity.csv'
@@ -41,36 +48,42 @@ news_df_original = pd.read_csv(file_location, sep=', ', engine='python')
 # Drop non-predictive attributes
 news_df = news_df_original.drop(['url', 'timedelta'], axis = 1) 
 
-# Detecting outliers using Z-score method
-z_scores= news_df.apply(zscore)
-threshold = 5.5 #this value is selected after testing many values and watching x
-news_df = news_df[np.abs(z_scores) < threshold]
+# Remove outliers here - FIX THIS!!!
 
-# Using moving mean to fix outliers:
-news_df = news_df.rolling(15, min_periods=1).mean() # values after filtering outliers is saved in news_df again
+# # Detecting outliers using Z-score method
+# z_scores= news_df.apply(zscore)
+# threshold = 5.5 #this value is selected after testing many values and watching x
+# news_df = news_df[np.abs(z_scores) < threshold]
+
+# # Using moving mean to fix outliers:
+# news_df = news_df.rolling(15, min_periods=1).mean() # values after filtering outliers is saved in news_df again
 
 
 # Getting dataset ready for training
 news_y = news_df['shares']
 news_y = news_y.apply(lambda x: 1 if x>=1400 else 0)
+
 news_x = news_df.drop(['shares'], axis = 1)
 class_names = ['Unpopular (<1400)', 'Popular (>=1400)']
 
-# Split dataset into test and train set - 25% (9911 instances out of 39644) used for testing
-news_x_train, news_x_test, news_y_train, news_y_test = train_test_split(news_x, news_y, test_size=0.25, random_state=42)
+# Scale Data from 0 to 1, so threshold could be applied on it (news_y already on that scale)
+minmax = preprocessing.MinMaxScaler(feature_range=(0, 1)).fit_transform(news_x)
+news_x = pd.DataFrame(minmax, columns=list(news_x.columns.values))
+
+# Split dataset into test and train set - 20% ( instances out of ) used for testing
+news_x_train, news_x_test, news_y_train, news_y_test = train_test_split(news_x, news_y, test_size=0.20, stratify=news_y)
 # news_x_test_reset = news_x_test.reset_index(drop=True)
 
 
 
 
+
 # RANDOM FOREST CLASSIFIER
+print('RANDOM FOREST CLASSIFIER')
+
 rf_clf = RandomForestClassifier()
-
-# Train the data
-rf_clf.fit(news_x_train, news_y_train)
-
-# Predict using test data, and calculate score
-rfc_prediction = rf_clf.predict(news_x_test)
+rf_clf.fit(news_x_train, news_y_train)  # Train the data
+rfc_prediction = rf_clf.predict(news_x_test)  # Predict using test data, and calculate score
 
 # rfc_score = rf_clf.score(news_x_test, news_y_test)
 # print('Random Forest Classifier Score: ', rfc_score)
@@ -79,7 +92,6 @@ rfc_prediction = rf_clf.predict(news_x_test)
 # rfc_prediction_df = pd.DataFrame(rfc_prediction, columns=['y'])
 # rfc_df = pd.concat([news_x_test_reset, rfc_prediction_df], axis=1)
 
-print('RANDOM FOREST CLASSIFIER')
 rfc_accuracy = cross_val_score(rf_clf, news_x, news_y, scoring='accuracy')
 print('Accuracy: {0:.3f} ({1:.3f})'.format(rfc_accuracy.mean(), rfc_accuracy.std()))
 
@@ -107,13 +119,11 @@ print('\n')
 
 
 # EXTRA TREES CLASSIFIER
+print('EXTRA TREES CLASSIFIER')
+
 xt_clf = ExtraTreesClassifier()
-
-# Train the data
-xt_clf.fit(news_x_train, news_y_train)
-
-# Predict using test data, and calculate score
-xtc_prediction = xt_clf.predict(news_x_test)
+xt_clf.fit(news_x_train, news_y_train)  # Train the data
+xtc_prediction = xt_clf.predict(news_x_test)  # Predict using test data
 
 # xtc_score = xt_clf.score(news_x_test, news_y_test)
 # print('Extra Trees Classifier Score: ', xtc_score)
@@ -122,7 +132,6 @@ xtc_prediction = xt_clf.predict(news_x_test)
 # xtc_prediction_df = pd.DataFrame(xtc_prediction, columns=['y'])
 # xtc_df = pd.concat([news_x_test_reset, xtc_prediction_df], axis=1)
 
-print('EXTRA TREES CLASSIFIER')
 xtc_accuracy = cross_val_score(xt_clf, news_x, news_y, scoring='accuracy')
 print('Accuracy: {0:.3f} ({1:.3f})'.format(xtc_accuracy.mean(), xtc_accuracy.std()))
 
@@ -150,13 +159,11 @@ print('\n')
 
 
 # ADABOOST CLASSIFIER
+print('ADABOOST CLASSIFIER')
+
 ada_clf = AdaBoostClassifier()
-
-# Train the data
-ada_clf.fit(news_x_train, news_y_train)
-
-# Predict using test data, and calculate score
-ada_prediction = ada_clf.predict(news_x_test)
+ada_clf.fit(news_x_train, news_y_train)  # Train the data
+ada_prediction = ada_clf.predict(news_x_test)  # Predict using test data
 
 # ada_score = ada_clf.score(news_x_test, news_y_test)
 # print('AdaBoost Classifier Score: ', ada_score)
@@ -165,7 +172,6 @@ ada_prediction = ada_clf.predict(news_x_test)
 # ada_prediction_df = pd.DataFrame(ada_prediction, columns=['y'])
 # ada_df = pd.concat([news_x_test_reset, ada_prediction_df], axis=1)
 
-print('ADABOOST CLASSIFIER')
 ada_accuracy = cross_val_score(ada_clf, news_x, news_y, scoring='accuracy')
 print('Accuracy: {0:.3f} ({1:.3f})'.format(ada_accuracy.mean(), ada_accuracy.std()))
 
@@ -209,6 +215,47 @@ print('\n')
 
 # TREES OF PREDICTORS CLASSIFIER (ToPs)
 
+t0 = time.time()
+print('TREES OF PREDICTORS - ToPs')
+# news_ToPs = ToPs(news_x_train, news_y_train, news_x_test, news_y_test, ['RandomForest', 'ExtraTrees', 'AdaBoost'])  # ToPs made of RandomForest, ExtraTrees and AdaBoost
+news_ToPs = ToPs(news_x_train, news_y_train, news_x_test, news_y_test, ['LinearSGD'])  #ToPs made of Linear SGD Classifier
+news_ToPs.create_tree(3) # Algorithm 1 & 2 - Create tree
+y_true, y_pred_prob = news_ToPs.predict_proba() # Algorithm 3 - Test
+
+# print("Y True: ", y_true)
+# print("Y Pred Prob: ", y_pred_prob)
+# print(news_ToPs.root_node)
+
+# Evaluation metrics - ToPs
+log_loss_ToPs = log_loss(y_true, y_pred_prob)
+print('Logarithmic Loss: {0:.3f}'.format(log_loss_ToPs))
+f.write('\nogarithmic Loss: {0:.3f}'.format(log_loss_ToPs))
+
+roc_auc_score_ToPs = roc_auc_score(y_true, y_pred_prob)
+print('Area under ROC Curve: {0:.3f}'.format(roc_auc_score_ToPs))
+f.write('\nArea under ROC Curve: {0:.3f}'.format(roc_auc_score_ToPs))
+
+# NEED ACCURACY, CONFUSION MATRIX, and CLASSIFICATION REPORT STILL - FIX THIS!!
+
+
+# Output ToPs results to output.txt
+f.write('\n\n----- ToPs -----\n\n')
+f.write(str(news_ToPs.root_node))
+f.write('\ny_true_test\n{0}\n'.format(y_true))
+f.write('\ny_pred_prob\n{0}\n'.format(y_pred_prob))
+
+t1 = time.time()
+print('Time taken - ToPs: {0:.1f} mins'.format((t1-t0)/60))
+f.write('\nTime taken - ToPs: {0:.1f} mins'.format((t1-t0)/60))
+
+# loss_on_leafs = news_ToPs.loss_validation1_of_all_leaf_nodes()
+# depth_of_tree = news_ToPs.get_depth_of_tree()
+
+# print('\nLoss values of all leafs {0}'.format(loss_on_leafs))
+# f.write('\nLoss values of all leafs {0}'.format(loss_on_leafs))
+
+# print('\nMax Depth of Tree: {0}'.format(depth_of_tree))
+# f.write('\nMax Depth of Tree: {0}'.format(depth_of_tree))
 
 
 

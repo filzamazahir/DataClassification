@@ -3,3 +3,4 @@
 venv
 output.txt
 ToPs_result.csv
+__pycache__

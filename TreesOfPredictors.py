@@ -21,40 +21,6 @@ from sklearn.ensemble import AdaBoostClassifier
 from sklearn.metrics import log_loss, roc_auc_score
 
 from math import inf
-import time
-
-# Open an output text file to output the Tree
-f = open('output.txt', 'w')
-
-
-# LOAD DATA
-file_location = 'OnlineNewsPopularity.csv'
-news_df_original = pd.read_csv(file_location, sep=', ', engine='python')
-
-# Drop non-predictive attributes
-news_df = news_df_original.drop(['url', 'timedelta'], axis = 1)
-
-# Remove outliers here - FIX THIS!!!
-
-
-
-
-
-# Getting dataset ready for training
-news_y = news_df['shares']
-news_y = news_y.apply(lambda x: 1 if x >=1400 else 0)
-
-news_x = news_df.drop(['shares'], axis = 1)
-class_names = ['Unpopular (<1400)', 'Popular (>=1400)']
-
-# Scale Data from 0 to 1, so threshold could be applied on it (news_y already on that scale)
-minmax = preprocessing.MinMaxScaler(feature_range=(0, 1)).fit_transform(news_x)
-news_x = pd.DataFrame(minmax, columns=list(news_x.columns.values))
-
-# Split dataset into test set - 20% for testing, rest for training and validation
-data_x, x_test, data_y, y_test = train_test_split(news_x, news_y, test_size=0.20, stratify=news_y)
-
-
 
 
 
@@ -123,7 +89,8 @@ class ToPs:
 	def construct_root_node(self):
 		loss_values_list = []
 		predictors = []
-		print('Root Node')
+		# print('Root Node')
+
 		for clf in self.classifiers:
 			clf_root = get_classifier_instance(clf)
 			clf_root.fit(self.x_train, self.y_train) # Train the classifier of the root node on the full dataset
@@ -145,7 +112,8 @@ class ToPs:
 
 	# Algorithm 1 - Figure out what the feature_to_split and threshold with minimum loss, then assign children based on that split
 	def create_sub_tree(self, node, max_depth):
-		print('Current Depth:', node.current_depth)
+		# print('Current Depth:', node.current_depth)
+
 		threshold_binary = [0.5]
 		threshold_continous = np.arange(0.1, 1.0, 0.1)
 
@@ -374,7 +342,8 @@ class ToPs:
 			else:
 				y_pred_prob_final = all_predictions_on_path_test_df.sum(axis=1)/len(all_predictions_on_path_test_df.columns)
 
-			print('Leaf - Predictions for {0} values'.format(len(y_pred_prob_final)))
+			# print('Leaf - Predictions for {0} values'.format(len(y_pred_prob_final)))
+			
 			return(node.y_test, pd.DataFrame(y_pred_prob_final))	
 
 		# Continue traversing through tree until leaf node
@@ -388,7 +357,8 @@ class ToPs:
 			y_test_parent = pd.concat([y_test_left, y_test_right])
 			y_pred_prob_final_parent = pd.concat([y_pred_prob_final_left, y_pred_prob_final_right])
 
-			print('Parent - Predictions for {0} values'.format(len(y_pred_prob_final_parent)))
+			# print('Parent - Predictions for {0} values'.format(len(y_pred_prob_final_parent)))
+			
 			return (y_test_parent, y_pred_prob_final_parent)
 
 
@@ -526,71 +496,6 @@ class Node:
 
 		return string_to_print
 	
-
-
-	
-
-
-
-
-#######################################################
-# Main function - outside all classes
-
-
-# Test functions here - construct tree from news dataset
-t0 = time.time()
-
-# news_ToPs = Tops(news_x, news_y, ['RandomForest', 'ExtraTrees', 'AdaBoost'])
-news_ToPs = ToPs(data_x, data_y, x_test, y_test, ['LinearSGD'])
-
-news_ToPs.create_tree(3) # Algorithm 1 & 2 - Create tree
-y_true, y_pred_prob = news_ToPs.predict_proba() # Algorithm 3 - Test
-
-print("Y True: ", y_true)
-print("Y Pred Prob: ", y_pred_prob)
-
-# Evaluation metrics
-final_log_loss = log_loss(y_true, y_pred_prob)
-final_roc_auc_score = roc_auc_score(y_true, y_pred_prob)
-
-loss_on_leafs = news_ToPs.loss_validation1_of_all_leaf_nodes()
-depth_of_tree = news_ToPs.get_depth_of_tree()
-
-print(news_ToPs.root_node)
-f.write(str(news_ToPs.root_node))
-
-f.write('\ny_true_test\n{0}\n'.format(y_true))
-f.write('\ny_pred_prob\n{0}\n'.format(y_pred_prob))
-
-print('\nLoss values of all leafs {0}'.format(loss_on_leafs))
-f.write('\nLoss values of all leafs {0}'.format(loss_on_leafs))
-
-print('\nMax Depth of Tree: {0}'.format(depth_of_tree))
-f.write('\nMax Depth of Tree: {0}'.format(depth_of_tree))
-
-print('\nFinal Log loss: {0}'.format(final_log_loss))
-f.write('\nFinal Log loss: {0}'.format(final_log_loss))
-		
-print('\nFinal ROC AUC Score: {0}'.format(final_roc_auc_score))
-f.write('\nFinal ROC AUC Score: {0}'.format(final_roc_auc_score))
-		
-t1 = time.time()
-
-print('\nTotal Time taken: {0:.1f} mins'.format((t1-t0)/60))
-f.write('\nTotal Time taken: {0:.1f} mins'.format((t1-t0)/60))
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
