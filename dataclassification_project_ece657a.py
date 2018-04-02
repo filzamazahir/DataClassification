@@ -393,7 +393,7 @@ ToPs_three_clf_area_roc = roc_auc_score(ToPs_three_clf_y_true, ToPs_three_clf_y_
 print('Area under ROC Curve: {0:.3f}'.format(ToPs_three_clf_area_roc))
 f.write('Area under ROC Curve: {0:.3f}\n'.format(ToPs_three_clf_area_roc))
 
-ToPs_three_clf_time_taken = t_ToPs_l2 - t_ToPs_l1
+ToPs_three_clf_time_taken = t_ToPs_3clf2 - t_ToPs_3clf1
 print('Time taken: {0:.3f} hours'.format(ToPs_three_clf_time_taken/3600))
 f.write('Time taken: {0:.3f} hours\n'.format(ToPs_three_clf_time_taken/3600))
 
