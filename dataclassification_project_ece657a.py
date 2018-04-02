@@ -77,6 +77,8 @@ news_y = news_y.apply(lambda x: 1 if x>=1400 else 0)
 news_x = news_df.drop(['shares'], axis = 1)
 class_names = ['Unpopular (<1400)', 'Popular (>=1400)']
 
+print('Class Balance\n', news_y.value_counts())
+
 # Scale Data from 0 to 1, so threshold could be applied on it (news_y already on that scale)
 minmax = preprocessing.MinMaxScaler(feature_range=(0, 1)).fit_transform(news_x)
 news_x = pd.DataFrame(minmax, columns=list(news_x.columns.values))
@@ -365,7 +367,7 @@ f.write('\nTREES OF PREDICTORS - 3 CLASSIFIERS (RandomForest ExtraTrees & AdaBoo
 t_ToPs_3clf1 = time.time()
 
 news_ToPs_three_clf = ToPs(news_x_train, news_y_train, news_x_test, news_y_test, ['RandomForest', 'ExtraTrees', 'AdaBoost'])  # ToPs made of RandomForest, ExtraTrees and AdaBoost
-news_ToPs_three_clf.create_tree(inf) # Algorithm 1 & 2 - Create tree
+news_ToPs_three_clf.create_tree(3) # Algorithm 1 & 2 - Create tree
 ToPs_three_clf_y_true, ToPs_three_clf_y_pred_prob = news_ToPs_three_clf.predict_proba() # Algorithm 3 - Test
 
 prediction_data['y_true_ToPs_3clf'] = ToPs_three_clf_y_true.as_matrix()
@@ -461,6 +463,7 @@ plt.title('ROC Curve')
 plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
 plt.legend(loc='lower right')
+plt.savefig('roc_curve.png')
 
 
 
@@ -475,6 +478,7 @@ plt.bar(index, [rfc_area_roc, xtc_area_roc, ada_area_roc, ToPs_linear_area_roc, 
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Area Under ROC')
 plt.title('Area Under ROC Curve')
+plt.savefig('area_roc.png')
 
 
 # Accuracy
@@ -485,6 +489,7 @@ plt.bar(index, [rfc_accuracy, xtc_accuracy, ada_accuracy, ToPs_linear_accuracy, 
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Accuracy')
 plt.title('Accuracy')
+plt.savefig('accuracy.png')
 
 # Log Loss
 plt.figure()
@@ -494,6 +499,7 @@ plt.bar(index, [rfc_log_loss, xtc_log_loss, ada_log_loss, ToPs_linear_log_loss, 
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Logarithmic Loss')
 plt.title('Logarithmic Loss')
+plt.savefig('log_loss.png')
 
 
 # Time Taken
@@ -504,6 +510,7 @@ plt.bar(index, [rfc_time_taken, xtc_time_taken, ada_time_taken, ToPs_linear_time
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Run Time (seconds)')
 plt.title('Run Time')
+plt.savefig('runtime.png')
 
 
 
@@ -523,6 +530,7 @@ plt.ylabel('Precision Values')
 plt.title('Precision')
 plt.xticks(index + bar_width, ('Unpopular', 'Popular'))
 plt.legend(loc='upper center')
+plt.savefig('precision.png')
 
 
 # Recall
@@ -540,6 +548,7 @@ plt.ylabel('Recall Values')
 plt.title('Recall')
 plt.xticks(index + bar_width, ('Unpopular', 'Popular'))
 plt.legend(loc='upper center')
+plt.savefig('recall.png')
 
 
 # F1-Score
@@ -557,6 +566,7 @@ plt.ylabel('F1-Score Values')
 plt.title('F1-Score')
 plt.xticks(index + bar_width, ('Unpopular', 'Popular'))
 plt.legend(loc='upper center')
+plt.savefig('f1_score.png')
 
 
 
