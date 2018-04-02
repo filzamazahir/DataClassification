@@ -20,18 +20,18 @@ from sklearn.ensemble import AdaBoostClassifier
 
 from sklearn.metrics import log_loss, roc_auc_score
 
-#from math import inf
+from math import inf
 
 
 
 # Global function - get classifier instance based on a given string
 def get_classifier_instance(name):
 	if name == 'RandomForest':
-		classifier = RandomForestClassifier()
+		classifier = RandomForestClassifier(n_estimators=50, max_depth=8)
 	elif name == 'ExtraTrees':
-		classifier = ExtraTreesClassifier()
+		classifier = ExtraTreesClassifier(n_estimators=50, max_depth=8)
 	elif name == 'AdaBoost':
-		classifier = AdaBoostClassifier()
+		classifier = AdaBoostClassifier(n_estimators=50)
 	elif name == 'LinearSGD':
 		classifier = linear_model.SGDClassifier(loss='log', max_iter=100, tol=0.001)
 
@@ -119,8 +119,8 @@ class ToPs:
 
 		if node.current_depth >= max_depth:
 			return
-		#minimum_loss_so_far = inf
-		minimum_loss_so_far =float('inf')
+		minimum_loss_so_far = inf
+		# minimum_loss_so_far =float('inf')
 		feature_at_min_loss = None
 		threshold_at_min_loss = None
 		children_nodes_at_min_loss = None
@@ -211,8 +211,8 @@ class ToPs:
 			return None
 
 		# Train classifier on the left data
-		#min_loss_left = inf
-		min_loss_left= float('inf')
+		min_loss_left = inf
+		# min_loss_left= float('inf')
 		clf_left_at_min_loss = None
 		clf_left_name_at_min_loss = None
 		is_dummy_left = False
@@ -387,11 +387,11 @@ class ToPs:
 		y_true = y_true.reset_index(drop=True)
 		y_pred_proba = y_pred_proba.reset_index(drop=True)
 
-		result_df = pd.concat([y_true, y_pred_proba], axis=1)
-		result_df.columns = ['y_true', 'y_pred_proba']
-		result_df.to_csv('ToPs_result.csv', index=False)
+		# result_df = pd.concat([y_true, y_pred_proba], axis=1)
+		# result_df.columns = ['y_true', 'y_pred_proba']
+		# result_df.to_csv('ToPs_result.csv', index=False)
 
-		return y_true, y_pred_proba
+		return y_true, y_pred_proba[0]
 
 
 
