@@ -8,7 +8,7 @@ AllPredictions.csv
 Precision_Recall_Threshold.csv
 fig_accuracy.png
 fig_area_roc.png
-f1_score.png
+fig_f1_score.png
 fig_log_loss.png
 fig_precision.png
 fig_recall.png

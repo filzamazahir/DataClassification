@@ -21,7 +21,7 @@ from sklearn.ensemble import AdaBoostClassifier
 from sklearn.tree import DecisionTreeClassifier
 
 from sklearn.model_selection import cross_val_score
-from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_curve, auc, roc_auc_score
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import log_loss
 from sklearn.metrics import confusion_matrix

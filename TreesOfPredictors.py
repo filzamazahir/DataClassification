@@ -18,7 +18,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.ensemble import AdaBoostClassifier
 
-from sklearn.metrics import log_loss, roc_auc_score
+from sklearn.metrics import log_loss
+from scipy import optimize
 
 from math import inf
 
@@ -164,7 +165,7 @@ class ToPs:
 			node.right = children_nodes_at_min_loss[0]
 			node.left = children_nodes_at_min_loss[1]
 
-			print('Creating children for node {0}'.format(node))  #REMOVE LATER
+			# print('Creating children for node {0}'.format(node))  #REMOVE LATER
 
 			# Assign children of this node based on the min loss 
 			self.create_sub_tree(node.right, max_depth)
@@ -296,22 +297,46 @@ class ToPs:
 			# print("All predictors on path: \n", all_predictors_on_path) 
 			node.leaf_all_predictors_on_path = all_predictors_on_path
 
+
 			if len(node.x_validate2) > 0 and len(node.y_validate2.unique()) == 2:
 				# Loop through all predictors on path from root to leaf, and add predictions to data dict
 				data = {}
 				for i, clf in enumerate(all_predictors_on_path):
-					y_pred_validate2 = clf.predict_proba(node.x_validate2)
-					y_pred_validate2 = y_pred_validate2[:, 1]
-					data["classifier " + str(i)] = y_pred_validate2
+					y_pred_proba_validate2 = clf.predict_proba(node.x_validate2)
+					y_pred_proba_validate2 = y_pred_proba_validate2[:, 1]
+					data["classifier " + str(i)] = y_pred_proba_validate2
 
 				# Create dataframe from the data dict
-				all_predictions_on_path_df = pd.DataFrame(data)
+				all_pred_proba_on_path_df = pd.DataFrame(data)
 
-				# Apply linear classifier based on all the predictions on root to leaf path
-				clf_linear_classifier = linear_model.SGDClassifier(loss='log', max_iter=1000, tol=0.0001)
-				clf_linear_classifier.fit(all_predictions_on_path_df, node.y_validate2)
-				node.leaf_classifier = clf_linear_classifier
-				# print("Weights learned: ", clf_linear_classifier.coef_) # Weights assigned as per algorithm 2
+				# Local Log Loss functions with weights for optimize function
+				def log_loss_with_weights(weights):
+					y_pred_proba = np.matmul(all_pred_proba_on_path_df.as_matrix(), weights)
+					return log_loss(node.y_validate2, y_pred_proba)
+
+				# Local function to check if some of weights is 1
+				def is_sum_one(weights):
+					return np.sum(weights) - 1.0
+
+
+				# Create a matrix of initial weights, weight bounds, and constraints_dict for optimize function
+				initial_weights = np.array([1.0/len(all_pred_proba_on_path_df.columns) for i in range(len(all_pred_proba_on_path_df.columns))])
+				weight_bounds = np.array([[0.0, 1.0] for i in range(len(all_pred_proba_on_path_df.columns))])
+				constraints_dict = {"fun": is_sum_one, "type": "eq"}
+
+				optimization_result = optimize.minimize(log_loss_with_weights, initial_weights, method="SLSQP", constraints=constraints_dict, bounds=weight_bounds)
+				node.leaf_optimized_weights = optimization_result.x
+
+				print('Optimized weights:')
+				print(node.leaf_optimized_weights)
+				
+
+				# # Apply linear classifier based on all the predictions on root to leaf path
+				# clf_linear_classifier = linear_model.SGDClassifier(loss='log', max_iter=1000, tol=0.0001)
+				# clf_linear_classifier.fit(all_pred_proba_on_path_df, node.y_validate2)
+				# node.leaf_classifier = clf_linear_classifier
+				# # print("Weights learned: ", clf_linear_classifier.coef_) # Weights assigned as per algorithm 2
+
 
 		# Continue traversing through tree and add predictors until leaf node
 		else:
@@ -320,6 +345,9 @@ class ToPs:
 			if node.right:
 				self.add_weights_to_predictors_on_path(node.right, predictors_on_path + [node.predictor])
 
+	
+	# Algorithm 2 - Check if some of weights is 1
+	
 
 
 
@@ -341,19 +369,29 @@ class ToPs:
 				data["classifier " + str(i)] = y_pred_test
 
 			# Create dataframe from the data dict
-			all_predictions_on_path_test_df = pd.DataFrame(data)
+			all_pred_proba_on_path_test_df = pd.DataFrame(data)
 
-			# Apply linear regressor based on all the predictions on root to leaf path
-			if node.leaf_classifier:
-				if len(node.x_test) > 0:
-					y_pred_prob_final = node.leaf_classifier.predict_proba(all_predictions_on_path_test_df)
-					y_pred_prob_final = y_pred_prob_final[:, 1]
-				else:
-					y_pred_prob_final = []
+			# Get final prediction probability with optimized weights
+			if node.leaf_optimized_weights.size > 0:
+				y_pred_prob_final = np.matmul(all_pred_proba_on_path_test_df.as_matrix(), node.leaf_optimized_weights)
 
-			# No leaf regressor - length of validate2 was 0 
+			# Assign equal weights if optimized weights don't exist (if len(x_validate2) = 0 or y_validate2 didn't have unique values)
 			else:
-				y_pred_prob_final = all_predictions_on_path_test_df.sum(axis=1)/len(all_predictions_on_path_test_df.columns)
+				y_pred_prob_final = all_pred_proba_on_path_test_df.sum(axis=1)/len(all_pred_proba_on_path_test_df.columns)
+
+
+			# # Apply linear regressor based on all the predictions on root to leaf path
+			# if node.leaf_classifier:
+			# 	if len(node.x_test) > 0:
+			# 		y_pred_prob_final = node.leaf_classifier.predict_proba(all_pred_proba_on_path_test_df)
+			# 		y_pred_prob_final = y_pred_prob_final[:, 1]
+			# 	else:
+			# 		y_pred_prob_final = []
+
+			# # No leaf regressor - length of validate2 was 0 
+			# else:
+			# 	y_pred_prob_final = all_predictions_on_path_test_df.sum(axis=1)/len(all_predictions_on_path_test_df.columns)
+
 
 			# print('Leaf - Predictions for {0} values'.format(len(y_pred_prob_final)))
 			
@@ -483,8 +521,9 @@ class Node:
 		self.loss_validate2 = None
 
 		# Regressor on leaf node with weights for all predictors on the path from root to leaf
-		self.leaf_classifier = None
+		# self.leaf_classifier = None
 		self.leaf_all_predictors_on_path = None
+		self.leaf_optimized_weights = np.array([])
 
 
 	def __str__(self):
