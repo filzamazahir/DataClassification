@@ -126,8 +126,11 @@ class ToPs:
 		children_nodes_at_min_loss = None
 
 		# Iterate through all the features
+		counter = 0
+		np.random.shuffle(self.column_names)
 		for feature in self.column_names:
 			threshold_range = threshold_binary if feature in self.binary_columns else threshold_continous
+			counter += 1
 
 			# Iterate through the range of thresholds
 			for threshold in threshold_range:
@@ -148,6 +151,9 @@ class ToPs:
 					threshold_at_min_loss = threshold
 					children_nodes_at_min_loss = children_nodes
 
+			if counter >= 10:
+				break
+
 
 		if minimum_loss_so_far < node.loss_validate1:
 
@@ -157,6 +163,8 @@ class ToPs:
 
 			node.right = children_nodes_at_min_loss[0]
 			node.left = children_nodes_at_min_loss[1]
+
+			print('Creating children for node {0}'.format(node))  #REMOVE LATER
 
 			# Assign children of this node based on the min loss 
 			self.create_sub_tree(node.right, max_depth)
@@ -292,14 +300,15 @@ class ToPs:
 				# Loop through all predictors on path from root to leaf, and add predictions to data dict
 				data = {}
 				for i, clf in enumerate(all_predictors_on_path):
-					y_pred_validate2 = clf.predict(node.x_validate2)
+					y_pred_validate2 = clf.predict_proba(node.x_validate2)
+					y_pred_validate2 = y_pred_validate2[:, 1]
 					data["classifier " + str(i)] = y_pred_validate2
 
 				# Create dataframe from the data dict
 				all_predictions_on_path_df = pd.DataFrame(data)
 
 				# Apply linear classifier based on all the predictions on root to leaf path
-				clf_linear_classifier = linear_model.SGDClassifier(loss='log', max_iter=200, tol=0.001)
+				clf_linear_classifier = linear_model.SGDClassifier(loss='log', max_iter=1000, tol=0.0001)
 				clf_linear_classifier.fit(all_predictions_on_path_df, node.y_validate2)
 				node.leaf_classifier = clf_linear_classifier
 				# print("Weights learned: ", clf_linear_classifier.coef_) # Weights assigned as per algorithm 2
@@ -324,7 +333,8 @@ class ToPs:
 			data = {}
 			for i, clf in enumerate(node.leaf_all_predictors_on_path):
 				if len(node.x_test) > 0:
-					y_pred_test = clf.predict(node.x_test)
+					y_pred_test = clf.predict_proba(node.x_test)
+					y_pred_test = y_pred_test[:, 1]
 				else:
 					y_pred_test = []
 

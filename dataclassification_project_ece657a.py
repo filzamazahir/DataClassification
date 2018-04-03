@@ -394,8 +394,8 @@ print('Area under ROC Curve: {0:.3f}'.format(ToPs_three_clf_area_roc))
 f.write('Area under ROC Curve: {0:.3f}\n'.format(ToPs_three_clf_area_roc))
 
 ToPs_three_clf_time_taken = t_ToPs_3clf2 - t_ToPs_3clf1
-print('Time taken: {0:.3f} hours'.format(ToPs_three_clf_time_taken/3600))
-f.write('Time taken: {0:.3f} hours\n'.format(ToPs_three_clf_time_taken/3600))
+print('Time taken: {0:.3f} mins'.format(ToPs_three_clf_time_taken/60))
+f.write('Time taken: {0:.3f} mins\n'.format(ToPs_three_clf_time_taken/60))
 
 ToPs_three_clf_confusion_matrix = confusion_matrix(ToPs_three_clf_y_true, ToPs_three_clf_prediction)
 print('Confusion Matrix: \n', ToPs_three_clf_confusion_matrix)
@@ -429,27 +429,27 @@ prediction_df.to_csv('AllPredictions.csv', index=False)
 # ROC Curve
 plt.figure()
 # Random Forest
-fpr, tpr, thresholds = roc_curve(news_y_test, rfc_prediction)
+fpr, tpr, thresholds = roc_curve(news_y_test, rfc_predict_prob[:, 1])
 rfc_roc_auc = auc(fpr, tpr)
 plt.plot(fpr,tpr,label='Random Forest AUC = {0:.2f}'.format(rfc_roc_auc), color='r', linestyle = '-.') 
 
 # Extra Trees
-fpr, tpr, thresholds = roc_curve(news_y_test, xtc_prediction)
+fpr, tpr, thresholds = roc_curve(news_y_test, xtc_predict_prob[:, 1])
 xtc_roc_auc = auc(fpr, tpr)
 plt.plot(fpr,tpr,label='Extra Tree AUC = {0:.2f}'.format(xtc_roc_auc), color='g', linestyle = '--') 
 
 # AdaBoost
-fpr, tpr, thresholds = roc_curve(news_y_test, ada_prediction)
+fpr, tpr, thresholds = roc_curve(news_y_test, ada_predict_prob[:, 1])
 ada_roc_auc = auc(fpr, tpr)
 plt.plot(fpr,tpr,label='AdaBoost AUC = {0:.2f}'.format(ada_roc_auc), color='b', linestyle = ':') 
 
 # ToPs Linear
-fpr, tpr, thresholds = roc_curve(ToPs_linear_y_true, ToPs_linear_prediction)
+fpr, tpr, thresholds = roc_curve(ToPs_linear_y_true, ToPs_linear_y_pred_prob)
 ToPs_linear_roc_auc = auc(fpr, tpr)
 plt.plot(fpr,tpr,label='ToPs Linear AUC = {0:.2f}'.format(ToPs_linear_roc_auc), color='c', linestyle = '--')
 
 # ToPs 3 Classifiers 
-fpr, tpr, thresholds = roc_curve(ToPs_three_clf_y_true, ToPs_three_clf_prediction)
+fpr, tpr, thresholds = roc_curve(ToPs_three_clf_y_true, ToPs_three_clf_y_pred_prob)
 ToPs_three_clf_roc_auc = auc(fpr, tpr)
 plt.plot(fpr,tpr,label='ToPs 3 Classifiers AUC = {0:.2f}'.format(ToPs_three_clf_roc_auc), color='m', linestyle = ':')
 
@@ -463,7 +463,7 @@ plt.title('ROC Curve')
 plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
 plt.legend(loc='lower right')
-plt.savefig('roc_curve.png')
+plt.savefig('fig_roc_curve.png')
 
 
 
@@ -478,7 +478,7 @@ plt.bar(index, [rfc_area_roc, xtc_area_roc, ada_area_roc, ToPs_linear_area_roc, 
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Area Under ROC')
 plt.title('Area Under ROC Curve')
-plt.savefig('area_roc.png')
+plt.savefig('fig_area_roc.png')
 
 
 # Accuracy
@@ -489,7 +489,7 @@ plt.bar(index, [rfc_accuracy, xtc_accuracy, ada_accuracy, ToPs_linear_accuracy, 
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Accuracy')
 plt.title('Accuracy')
-plt.savefig('accuracy.png')
+plt.savefig('fig_accuracy.png')
 
 # Log Loss
 plt.figure()
@@ -499,7 +499,7 @@ plt.bar(index, [rfc_log_loss, xtc_log_loss, ada_log_loss, ToPs_linear_log_loss, 
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Logarithmic Loss')
 plt.title('Logarithmic Loss')
-plt.savefig('log_loss.png')
+plt.savefig('fig_log_loss.png')
 
 
 # Time Taken
@@ -510,7 +510,7 @@ plt.bar(index, [rfc_time_taken, xtc_time_taken, ada_time_taken, ToPs_linear_time
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Run Time (seconds)')
 plt.title('Run Time')
-plt.savefig('runtime.png')
+plt.savefig('fig_runtime.png')
 
 
 
@@ -530,7 +530,7 @@ plt.ylabel('Precision Values')
 plt.title('Precision')
 plt.xticks(index + bar_width, ('Unpopular', 'Popular'))
 plt.legend(loc='upper center')
-plt.savefig('precision.png')
+plt.savefig('fig_precision.png')
 
 
 # Recall
@@ -548,7 +548,7 @@ plt.ylabel('Recall Values')
 plt.title('Recall')
 plt.xticks(index + bar_width, ('Unpopular', 'Popular'))
 plt.legend(loc='upper center')
-plt.savefig('recall.png')
+plt.savefig('fig_recall.png')
 
 
 # F1-Score
@@ -566,7 +566,7 @@ plt.ylabel('F1-Score Values')
 plt.title('F1-Score')
 plt.xticks(index + bar_width, ('Unpopular', 'Popular'))
 plt.legend(loc='upper center')
-plt.savefig('f1_score.png')
+plt.savefig('fig_f1_score.png')
 
 
 
