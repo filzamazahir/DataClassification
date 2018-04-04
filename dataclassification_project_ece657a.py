@@ -16,13 +16,12 @@ from scipy.stats import zscore
 from sklearn.model_selection import train_test_split
 from sklearn.feature_selection import SelectFromModel
 
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.ensemble import AdaBoostClassifier
-from sklearn.tree import DecisionTreeClassifier
 
-from sklearn.model_selection import cross_val_score
-from sklearn.metrics import roc_curve, auc, roc_auc_score
+from sklearn.metrics import roc_curve, roc_auc_score
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import log_loss
 from sklearn.metrics import confusion_matrix
@@ -128,12 +127,85 @@ def add_metric(metric_name, predictor_name, value):
 		metrics_all_runs[metric_name][predictor_name].append(value)
 
 
-
+# Loop to the run the experiment 10 times 
+# Edited to 3 experiments for submission so code finishes in half an hour, but ran it for 10 times for the report
 for i in range(10):
+	print('\n----------------------------')
+	print('Experiment No.:  {0}\n'.format(i+1))
+	f.write('\n\n----------------------------')
+	f.write('\n\nExperiment No.:  {0}\n'.format(i+1))
 
 	# Output results in a csv file
 	prediction_data = {}
 	prediction_data['y_true_rfc_xtc_ada'] = news_y_test.reset_index(drop=True).as_matrix()
+
+
+	# kNN CLASSIFIER - BASELINE METHOD
+	print('K NEAREST NEIGHBORS CLASSIFIER - BASELINE METHOD')
+	f.write('\nK NEAREST NEIGHBORS CLASSIFIER - BASELINE METHOD\n')
+
+	t_kNN1 = time.time()
+
+	kNN_clf = KNeighborsClassifier()
+	kNN_clf.fit(news_x_train, news_y_train)
+	kNN_prediction = kNN_clf.predict(news_x_test)
+	kNN_predict_prob = kNN_clf.predict_proba(news_x_test) # Predict class probabilities
+
+	prediction_data['kNN_pred_prob'] = kNN_predict_prob[:, 1]
+	prediction_data['kNN_pred'] = kNN_prediction
+
+
+	t_kNN2 = time.time()
+
+	# Calculate metrics and save to metrics_all_runs dict using add_metric funtion
+	kNN_accuracy = accuracy_score(news_y_test, kNN_prediction)
+	add_metric('accuracy', 'kNN', kNN_accuracy)
+	print('Accuracy: {0:.3f}'.format(kNN_accuracy))
+	f.write('Accuracy: {0:.3f}\n'.format(kNN_accuracy))
+
+	kNN_log_loss = log_loss(news_y_test, kNN_predict_prob[:, 1])
+	add_metric('log_loss', 'kNN', kNN_log_loss)
+	print('Logarithmic Loss: {0:.3f}'.format(kNN_log_loss))
+	f.write('Logarithmic Loss: {0:.3f}\n'.format(kNN_log_loss))
+
+	kNN_area_roc = roc_auc_score(news_y_test, kNN_predict_prob[:, 1])
+	add_metric('area_roc', 'kNN', kNN_area_roc)
+	print('Area under ROC Curve: {0:.3f}'.format(kNN_area_roc))
+	f.write('Area under ROC Curve: {0:.3f}\n'.format(kNN_area_roc))
+
+	kNN_time_taken = t_kNN2 - t_kNN1
+	add_metric('training_time', 'kNN', kNN_time_taken)
+	print('Time taken: {0:.3f} seconds'.format(kNN_time_taken))
+	f.write('Time taken: {0:.3f} seconds\n'.format(kNN_time_taken))
+
+	kNN_confusion_matrix = confusion_matrix(news_y_test, kNN_prediction)
+	print('Confusion Matrix: \n', kNN_confusion_matrix)
+	f.write('Confusion Matrix: \n')
+	f.write(str(kNN_confusion_matrix))
+	f.write('\n')
+
+
+	kNN_classification_report = classification_report(news_y_test, kNN_prediction, target_names=class_names)
+	kNN_precision, kNN_recall, kNN_f1score, kNN_support = precision_recall_fscore_support(news_y_test, kNN_prediction, average=None)
+
+	add_metric('precision_unpopular', 'kNN', kNN_precision[0])
+	add_metric('precision_popular', 'kNN', kNN_precision[1])
+
+	add_metric('recall_unpopular', 'kNN', kNN_recall[0])
+	add_metric('recall_popular', 'kNN', kNN_recall[1])
+
+	add_metric('f1score_unpopular', 'kNN', kNN_f1score[0])
+	add_metric('f1score_popular', 'kNN', kNN_f1score[1])
+
+	print('Classification Report:')
+	print(kNN_classification_report)
+
+	f.write('Classification Report:\n')
+	f.write(kNN_classification_report)
+
+
+	print('\n')
+	f.write('\n')
 
 
 
@@ -413,8 +485,8 @@ for i in range(10):
 
 
 
-	print('TREES OF PREDICTORS - 3 CLASSIFIERS (RandomForest ExtraTrees & AdaBoost')
-	f.write('\nTREES OF PREDICTORS - 3 CLASSIFIERS (RandomForest ExtraTrees & AdaBoost\n')
+	print('TREES OF PREDICTORS - 3 CLASSIFIERS (RandomForest ExtraTrees & AdaBoost)')
+	f.write('\nTREES OF PREDICTORS - 3 CLASSIFIERS (RandomForest ExtraTrees & AdaBoost)\n')
 
 	t_ToPs_3clf1 = time.time()
 
@@ -522,31 +594,21 @@ metrics_file_handle.close()
 
 # ROC Curve
 plt.figure()
-# Random Forest
+
 fpr, tpr, thresholds = roc_curve(news_y_test, rfc_predict_prob[:, 1])
-rfc_roc_auc = auc(fpr, tpr)
 plt.plot(fpr,tpr,label='Random Forest AUC = {0:.2f}'.format(metric_mean['area_roc']['rfc']), color='r', linestyle = '-.') 
 
-# Extra Trees
 fpr, tpr, thresholds = roc_curve(news_y_test, xtc_predict_prob[:, 1])
-xtc_roc_auc = auc(fpr, tpr)
 plt.plot(fpr,tpr,label='Extra Tree AUC = {0:.2f}'.format(metric_mean['area_roc']['xtc']), color='g', linestyle = '--') 
 
-# AdaBoost
 fpr, tpr, thresholds = roc_curve(news_y_test, ada_predict_prob[:, 1])
-ada_roc_auc = auc(fpr, tpr)
 plt.plot(fpr,tpr,label='AdaBoost AUC = {0:.2f}'.format(metric_mean['area_roc']['ada']), color='b', linestyle = ':') 
 
-# ToPs Linear
 fpr, tpr, thresholds = roc_curve(ToPs_linear_y_true, ToPs_linear_y_pred_prob)
-ToPs_linear_roc_auc = auc(fpr, tpr)
 plt.plot(fpr,tpr,label='ToPs Linear AUC = {0:.2f}'.format(metric_mean['area_roc']['ToPs_linear']), color='c', linestyle = '--')
 
-# ToPs 3 Classifiers 
 fpr, tpr, thresholds = roc_curve(ToPs_three_clf_y_true, ToPs_three_clf_y_pred_prob)
-ToPs_three_clf_roc_auc = auc(fpr, tpr)
 plt.plot(fpr,tpr,label='ToPs 3 Classifiers AUC = {0:.2f}'.format(metric_mean['area_roc']['ToPs_three_clf']), color='m', linestyle = ':')
-
 
 plt.title('ROC Curve')
 plt.xlabel('False Positive Rate')
@@ -661,7 +723,7 @@ plt.savefig('fig_f1_score.png')
 
 
 
-
+f.close()
 plt.show()
 
 
