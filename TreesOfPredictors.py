@@ -127,11 +127,8 @@ class ToPs:
 		children_nodes_at_min_loss = None
 
 		# Iterate through all the features
-		counter = 0
-		np.random.shuffle(self.column_names)
 		for feature in self.column_names:
 			threshold_range = threshold_binary if feature in self.binary_columns else threshold_continous
-			counter += 1
 
 			# Iterate through the range of thresholds
 			for threshold in threshold_range:
@@ -151,10 +148,6 @@ class ToPs:
 					feature_at_min_loss = feature
 					threshold_at_min_loss = threshold
 					children_nodes_at_min_loss = children_nodes
-
-			if counter >= 10:
-				break
-
 
 		if minimum_loss_so_far < node.loss_validate1:
 
