@@ -14,6 +14,7 @@ import numpy as np
 from scipy.stats import zscore
 
 from sklearn.model_selection import train_test_split
+from sklearn.feature_selection import SelectFromModel
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import ExtraTreesClassifier
@@ -58,17 +59,9 @@ news_df_original = pd.read_csv(file_location, sep=', ', engine='python')
 # Drop non-predictive attributes
 news_df = news_df_original.drop(['url', 'timedelta'], axis = 1) 
 
-
 # Removing outliers 
 news_df = news_df[(np.abs(zscore(news_df)) < 5).all(axis = 1)] # outliers are those that are 5 standard deviations away from mean
-# news_df = news_df.rolling(15, min_periods=1).mean() # Using rolling mean
-
 news_df = news_df.reset_index(drop=True)
-
-# Drop columns that have a low correlation - FIX THIS!!
-
-
-
 
 # Getting dataset ready for training
 news_y = news_df['shares']
@@ -83,380 +76,476 @@ print('Class Balance\n', news_y.value_counts())
 minmax = preprocessing.MinMaxScaler(feature_range=(0, 1)).fit_transform(news_x)
 news_x = pd.DataFrame(minmax, columns=list(news_x.columns.values))
 
+
 # Split dataset into test and train set - 20% ( instances out of ) used for testing
 news_x_train, news_x_test, news_y_train, news_y_test = train_test_split(news_x, news_y, test_size=0.20, stratify=news_y)
-news_x_test_reset = news_x_test.reset_index(drop=True)
 
 
-# Output results in a csv file
-prediction_data = {}
-prediction_data['y_true_rfc_xtc_ada'] = news_y_test.reset_index(drop=True).as_matrix()
+# Select important features
+clf = RandomForestClassifier(n_estimators=50, max_depth=8)
+clf.fit(news_x_train, news_y_train) 
+model = SelectFromModel(clf, prefit=True, threshold=0.02)
+important_features = model.get_support()
 
+# Drop the unimportant features
+feature_names = news_x.columns.values
+for i, feature_importance in enumerate(important_features):
+	if feature_importance == False:
+		news_x_train = news_x_train.drop([feature_names[i]], axis = 1)
+		news_x_test = news_x_test.drop([feature_names[i]], axis = 1)
 
-
-
-# RANDOM FOREST CLASSIFIER
-print('RANDOM FOREST CLASSIFIER')
-f.write('\nRANDOM FOREST CLASSIFIER\n')
-
-t_rf1 = time.time()
-
-rf_clf = RandomForestClassifier(n_estimators=50, max_depth=8)
-rf_clf.fit(news_x_train, news_y_train)  # Train the data
-rfc_prediction = rf_clf.predict(news_x_test)  # Predict using test data, and calculate score
-rfc_predict_prob = rf_clf.predict_proba(news_x_test) # Predict class probabilities
-
-prediction_data['rfc_pred_prob'] = rfc_predict_prob[:, 1]
-prediction_data['rfc_pred'] = rfc_prediction
-
-
-t_rf2 = time.time()
-
-# # Merge testing data with Random Forest Classifier predictions for plots
-rfc_prediction_df = pd.DataFrame(rfc_prediction, columns=['y'])
-rfc_df = pd.concat([news_x_test_reset, rfc_prediction_df], axis=1)
-
-rfc_accuracy = accuracy_score(news_y_test, rfc_prediction)
-print('Accuracy: {0:.3f}'.format(rfc_accuracy))
-f.write('Accuracy: {0:.3f}\n'.format(rfc_accuracy))
-
-rfc_log_loss = log_loss(news_y_test, rfc_predict_prob[:, 1])
-# print('Logarithmic Loss: {0:.3f} ({1:.3f})'.format(rfc_log_loss.mean(), rfc_log_loss.std()))
-print('Logarithmic Loss: {0:.3f}'.format(rfc_log_loss))
-f.write('Logarithmic Loss: {0:.3f}\n'.format(rfc_log_loss))
-
-rfc_area_roc = roc_auc_score(news_y_test, rfc_predict_prob[:, 1])
-# print('Area under ROC Curve: {0:.3f} ({1:.3f})'.format(rfc_area_roc.mean(), rfc_area_roc.std()))
-print('Area under ROC Curve: {0:.3f}'.format(rfc_area_roc))
-f.write('Area under ROC Curve: {0:.3f}\n'.format(rfc_area_roc))
-
-rfc_time_taken = t_rf2 - t_rf1
-print('Time taken: {0:.3f} seconds'.format(rfc_time_taken))
-f.write('Time taken: {0:.3f} seconds\n'.format(rfc_time_taken))
-
-rfc_confusion_matrix = confusion_matrix(news_y_test, rfc_prediction)
-print('Confusion Matrix: \n', rfc_confusion_matrix)
-f.write('Confusion Matrix: \n')
-f.write(str(rfc_confusion_matrix))
-f.write('\n')
-
-
-rfc_classification_report = classification_report(news_y_test, rfc_prediction, target_names=class_names)
-RF_precision, RF_recall, RF_f1score, RF_support = precision_recall_fscore_support(news_y_test, rfc_prediction, average=None)
-print('Classification Report:')
-print(rfc_classification_report)
-f.write('Classification Report:\n')
-f.write(rfc_classification_report)
-
-
-## rfc_precision, rfc_recall, rfc_threshold = precision_recall_curve(news_y_test, rfc_predict_prob)
-## print('Precission: ', rfc_precision)
-## print('Recall: ', rfc_recall)
-## print('Threshold: ', rfc_threshold)
-
+print('\nNumber of features selcted: {0}'.format(np.sum(important_features)))
+print('Feature Selected\n', news_x_train.columns.values)
 print('\n')
+
+f.write('\n\nNumber of features selcted: {0}'.format(np.sum(important_features)))
+f.write('\nFeature Selected\n')
+f.write(str(news_x_train.columns.values))
 f.write('\n')
 
 
 
+# Save evaluation metrics for all runs in metrics_all_runs dict
+metrics_all_runs = {
+'log_loss':{},
+'accuracy': {},
+'area_roc': {},
+'training_time': {},
+'precision_unpopular': {},
+'precision_popular': {},
+'recall_unpopular': {},
+'recall_popular':{},
+'f1score_unpopular' : {},
+'f1score_popular': {}
+}
 
-# EXTRA TREES CLASSIFIER
-print('EXTRA TREES CLASSIFIER')
-f.write('\nEXTRA TREES CLASSIFIER\n')
 
-t_xt1 = time.time()
+# Function to add metrics to the nested metric_all_runs dict
+def add_metric(metric_name, predictor_name, value):
+	if predictor_name not in metrics_all_runs[metric_name]:
+		metrics_all_runs[metric_name][predictor_name] = [value]
+	else:
+		metrics_all_runs[metric_name][predictor_name].append(value)
 
-xt_clf = ExtraTreesClassifier(n_estimators=50, max_depth=8)
-xt_clf.fit(news_x_train, news_y_train)  # Train the data
-xtc_prediction = xt_clf.predict(news_x_test)  # Predict using test data
-xtc_predict_prob = xt_clf.predict_proba(news_x_test) # Predict class probabilities
 
-prediction_data['xtc_pred_prob'] = xtc_predict_prob[:, 1]
-prediction_data['xtc_pred'] = xtc_prediction
 
-t_xt2 = time.time()
+for i in range(10):
 
-# # Merge testing data with Extra Trees Classifier predictions for plots
-xtc_prediction_df = pd.DataFrame(xtc_prediction, columns=['y'])
-xtc_df = pd.concat([news_x_test_reset, xtc_prediction_df], axis=1)
+	# Output results in a csv file
+	prediction_data = {}
+	prediction_data['y_true_rfc_xtc_ada'] = news_y_test.reset_index(drop=True).as_matrix()
 
-xtc_accuracy = accuracy_score(news_y_test, xtc_prediction)
-# print('Accuracy: {0:.3f} ({1:.3f})'.format(xtc_accuracy.mean(), xtc_accuracy.std()))
-print('Accuracy: {0:.3f}'.format(xtc_accuracy))
-f.write('Accuracy: {0:.3f}\n'.format(xtc_accuracy))
 
-xtc_log_loss = log_loss(news_y_test, xtc_predict_prob[:, 1])
-# print('Logarithmic Loss: {0:.3f} ({1:.3f})'.format(xtc_log_loss.mean(), xtc_log_loss.std()))
-print('Logarithmic Loss: {0:.3f}'.format(xtc_log_loss))
-f.write('Logarithmic Loss: {0:.3f}\n'.format(xtc_log_loss))
 
-xtc_area_roc = roc_auc_score(news_y_test, xtc_predict_prob[:, 1])
-# print('Area under ROC Curve: {0:.3f} ({1:.3f})'.format(xtc_area_roc.mean(), xtc_area_roc.std()))
-print('Area under ROC Curve: {0:.3f}'.format(xtc_area_roc))
-f.write('Area under ROC Curve: {0:.3f}\n'.format(xtc_area_roc))
+	# RANDOM FOREST CLASSIFIER
+	print('RANDOM FOREST CLASSIFIER')
+	f.write('\nRANDOM FOREST CLASSIFIER\n')
 
-xtc_time_taken = t_xt2 - t_xt1
-print('Time taken: {0:.3f} seconds'.format(xtc_time_taken))
-f.write('Time taken: {0:.3f} seconds\n'.format(xtc_time_taken))
+	t_rf1 = time.time()
 
-xtc_confusion_matrix = confusion_matrix(news_y_test, xtc_prediction)
-print('Confusion Matrix: \n', xtc_confusion_matrix)
-f.write('Confusion Matrix: \n')
-f.write(str(xtc_confusion_matrix))
-f.write('\n')
+	rf_clf = RandomForestClassifier(n_estimators=50, max_depth=8)
+	rf_clf.fit(news_x_train, news_y_train)  # Train the data
+	rfc_prediction = rf_clf.predict(news_x_test)  # Predict using test data, and calculate score
+	rfc_predict_prob = rf_clf.predict_proba(news_x_test) # Predict class probabilities
 
-xtc_classification_report = classification_report(news_y_test, xtc_prediction, target_names=class_names)
-XT_precision, XT_recall, XT_f1score, XT_support = precision_recall_fscore_support(news_y_test, xtc_prediction, average=None)
-print('Classification Report:')
-print(xtc_classification_report)
-f.write('Classification Report:\n')
-f.write(xtc_classification_report)
+	prediction_data['rfc_pred_prob'] = rfc_predict_prob[:, 1]
+	prediction_data['rfc_pred'] = rfc_prediction
 
 
-## xtc_precision, xtc_recall, xtc_threshold = precision_recall_curve(news_y_test, xtc_predict_prob)
-## print('Precission: ', xtc_precision)
-## print('Recall: ', xtc_recall)
-## print('Threshold: ', xtc_threshold)
+	t_rf2 = time.time()
 
-print('\n')
-f.write('\n')
+	# Calculate metrics and save to metrics_all_runs dict using add_metric funtion
+	rfc_accuracy = accuracy_score(news_y_test, rfc_prediction)
+	add_metric('accuracy', 'rfc', rfc_accuracy)
+	print('Accuracy: {0:.3f}'.format(rfc_accuracy))
+	f.write('Accuracy: {0:.3f}\n'.format(rfc_accuracy))
 
+	rfc_log_loss = log_loss(news_y_test, rfc_predict_prob[:, 1])
+	add_metric('log_loss', 'rfc', rfc_log_loss)
+	print('Logarithmic Loss: {0:.3f}'.format(rfc_log_loss))
+	f.write('Logarithmic Loss: {0:.3f}\n'.format(rfc_log_loss))
 
+	rfc_area_roc = roc_auc_score(news_y_test, rfc_predict_prob[:, 1])
+	add_metric('area_roc', 'rfc', rfc_area_roc)
+	print('Area under ROC Curve: {0:.3f}'.format(rfc_area_roc))
+	f.write('Area under ROC Curve: {0:.3f}\n'.format(rfc_area_roc))
 
-# ADABOOST CLASSIFIER
-print('ADABOOST CLASSIFIER')
-f.write('\nADABOOST CLASSIFIER\n')
+	rfc_time_taken = t_rf2 - t_rf1
+	add_metric('training_time', 'rfc', rfc_time_taken)
+	print('Time taken: {0:.3f} seconds'.format(rfc_time_taken))
+	f.write('Time taken: {0:.3f} seconds\n'.format(rfc_time_taken))
 
-t_ada1 = time.time()
+	rfc_confusion_matrix = confusion_matrix(news_y_test, rfc_prediction)
+	print('Confusion Matrix: \n', rfc_confusion_matrix)
+	f.write('Confusion Matrix: \n')
+	f.write(str(rfc_confusion_matrix))
+	f.write('\n')
 
-ada_clf = AdaBoostClassifier(n_estimators=50)
-ada_clf.fit(news_x_train, news_y_train)  # Train the data
-ada_prediction = ada_clf.predict(news_x_test)  # Predict using test data
-ada_predict_prob = ada_clf.predict_proba(news_x_test) # Predict class probabilities
 
-prediction_data['ada_pred_prob'] = ada_predict_prob[:, 1]
-prediction_data['ada_pred'] = ada_prediction
+	rfc_classification_report = classification_report(news_y_test, rfc_prediction, target_names=class_names)
+	RF_precision, RF_recall, RF_f1score, RF_support = precision_recall_fscore_support(news_y_test, rfc_prediction, average=None)
 
-t_ada2 = time.time()
+	add_metric('precision_unpopular', 'rfc', RF_precision[0])
+	add_metric('precision_popular', 'rfc', RF_precision[1])
 
-# # Merge testing data with AdaBoost Classifier predictions for plots
-ada_prediction_df = pd.DataFrame(ada_prediction, columns=['y'])
-ada_df = pd.concat([news_x_test_reset, ada_prediction_df], axis=1)
+	add_metric('recall_unpopular', 'rfc', RF_recall[0])
+	add_metric('recall_popular', 'rfc', RF_recall[1])
 
-ada_accuracy = accuracy_score(news_y_test, ada_prediction)
-# print('Accuracy: {0:.3f} ({1:.3f})'.format(ada_accuracy.mean(), ada_accuracy.std()))
-print('Accuracy: {0:.3f}'.format(ada_accuracy))
-f.write('Accuracy: {0:.3f}\n'.format(ada_accuracy))
+	add_metric('f1score_unpopular', 'rfc', RF_f1score[0])
+	add_metric('f1score_popular', 'rfc', RF_f1score[1])
 
-ada_log_loss = log_loss(news_y_test, ada_predict_prob[:, 1])
-# print('Logarithmic Loss: {0:.3f} ({1:.3f})'.format(ada_log_loss.mean(), ada_log_loss.std()))
-print('Logarithmic Loss: {0:.3f}'.format(ada_log_loss))
-f.write('Logarithmic Loss: {0:.3f}\n'.format(ada_log_loss))
 
-ada_area_roc = roc_auc_score(news_y_test, ada_predict_prob[:, 1])
-# print('Area under ROC Curve: {0:.3f} ({1:.3f})'.format(ada_area_roc.mean(), ada_area_roc.std()))
-print('Area under ROC Curve: {0:.3f}'.format(ada_area_roc))
-f.write('Area under ROC Curve: {0:.3f}\n'.format(ada_area_roc))
+	print('Classification Report:')
+	print(rfc_classification_report)
 
-ada_time_taken = t_ada2 - t_ada1
-print('Time taken: {0:.3f} seconds'.format(ada_time_taken))
-f.write('Time taken: {0:.3f} seconds\n'.format(ada_time_taken))
+	f.write('Classification Report:\n')
+	f.write(rfc_classification_report)
 
-ada_confusion_matrix = confusion_matrix(news_y_test, ada_prediction)
-print('Confusion Matrix: \n', ada_confusion_matrix)
-f.write('Confusion Matrix: \n')
-f.write(str(ada_confusion_matrix))
-f.write('\n')
 
-ada_classification_report = classification_report(news_y_test, ada_prediction, target_names=class_names)
-ADA_precision, ADA_recall, ADA_f1score, ADA_support = precision_recall_fscore_support(news_y_test, ada_prediction, average=None)
-print('Classification Report:')
-print(ada_classification_report)
-f.write('Classification Report:\n')
-f.write(ada_classification_report)
+	print('\n')
+	f.write('\n')
 
 
-## ada_precision, ada_recall, ada_threshold = precision_recall_curve(news_y_test, ada_predict_prob)
-## print('Precission: ', ada_precision)
-## print('Recall: ', ada_recall)
-## print('Threshold: ', ada_threshold)
 
-print('\n')
-f.write('\n')
+	# EXTRA TREES CLASSIFIER
+	print('EXTRA TREES CLASSIFIER')
+	f.write('\nEXTRA TREES CLASSIFIER\n')
 
+	t_xt1 = time.time()
 
+	xt_clf = ExtraTreesClassifier(n_estimators=50, max_depth=8)
+	xt_clf.fit(news_x_train, news_y_train)  # Train the data
+	xtc_prediction = xt_clf.predict(news_x_test)  # Predict using test data
+	xtc_predict_prob = xt_clf.predict_proba(news_x_test) # Predict class probabilities
 
+	prediction_data['xtc_pred_prob'] = xtc_predict_prob[:, 1]
+	prediction_data['xtc_pred'] = xtc_prediction
 
-# TREES OF PREDICTORS CLASSIFIER (ToPs)
+	t_xt2 = time.time()
 
-print('TREES OF PREDICTORS - LINEAR')
-f.write('\nTREES OF PREDICTORS - LINEAR\n')
+	# Calculate metrics and save to metrics_all_runs dict using add_metric funtion
+	xtc_accuracy = accuracy_score(news_y_test, xtc_prediction)
+	add_metric('accuracy', 'xtc', xtc_accuracy)
+	print('Accuracy: {0:.3f}'.format(xtc_accuracy))
+	f.write('Accuracy: {0:.3f}\n'.format(xtc_accuracy))
 
-t_ToPs_l1 = time.time()
+	xtc_log_loss = log_loss(news_y_test, xtc_predict_prob[:, 1])
+	add_metric('log_loss', 'xtc', xtc_log_loss)
+	print('Logarithmic Loss: {0:.3f}'.format(xtc_log_loss))
+	f.write('Logarithmic Loss: {0:.3f}\n'.format(xtc_log_loss))
 
-news_ToPs_linear = ToPs(news_x_train, news_y_train, news_x_test, news_y_test, ['LinearSGD'])  #ToPs made of Linear SGD Classifier
-news_ToPs_linear.create_tree(inf) # Algorithm 1 & 2 - Create tree
-ToPs_linear_y_true, ToPs_linear_y_pred_prob = news_ToPs_linear.predict_proba() # Algorithm 3 - Test
+	xtc_area_roc = roc_auc_score(news_y_test, xtc_predict_prob[:, 1])
+	add_metric('area_roc', 'xtc', xtc_area_roc)
+	print('Area under ROC Curve: {0:.3f}'.format(xtc_area_roc))
+	f.write('Area under ROC Curve: {0:.3f}\n'.format(xtc_area_roc))
 
-prediction_data['y_true_ToPs_linear'] = ToPs_linear_y_true.as_matrix()
-prediction_data['ToPs_linear_pred_prob'] = ToPs_linear_y_pred_prob.as_matrix()
+	xtc_time_taken = t_xt2 - t_xt1
+	add_metric('training_time', 'xtc', xtc_time_taken)
+	print('Time taken: {0:.3f} seconds'.format(xtc_time_taken))
+	f.write('Time taken: {0:.3f} seconds\n'.format(xtc_time_taken))
 
+	xtc_confusion_matrix = confusion_matrix(news_y_test, xtc_prediction)
+	print('Confusion Matrix: \n', xtc_confusion_matrix)
+	f.write('Confusion Matrix: \n')
+	f.write(str(xtc_confusion_matrix))
+	f.write('\n')
 
-ToPs_linear_precision, ToPs_linear_recall, ToPs_linear_threshold = precision_recall_curve(ToPs_linear_y_true, ToPs_linear_y_pred_prob)
-prc_data_ToPs_linear = {'precision': ToPs_linear_precision[:-1], 'recall': ToPs_linear_recall[:-1], 'threshold': ToPs_linear_threshold}
-precision_recall_threshold_df = pd.DataFrame(prc_data_ToPs_linear)
-precision_recall_threshold_df.to_csv('Precision_Recall_Threshold.csv', index=False)
+	xtc_classification_report = classification_report(news_y_test, xtc_prediction, target_names=class_names)
+	XT_precision, XT_recall, XT_f1score, XT_support = precision_recall_fscore_support(news_y_test, xtc_prediction, average=None)
 
-# print('Precision', ToPs_linear_precision)
-# print('Recall', ToPs_linear_recall)
-# print('Threshold', ToPs_linear_threshold)
+	add_metric('precision_unpopular', 'xtc', XT_precision[0])
+	add_metric('precision_popular', 'xtc', XT_precision[1])
 
+	add_metric('recall_unpopular', 'xtc', XT_recall[0])
+	add_metric('recall_popular', 'xtc', XT_recall[1])
 
-ToPs_linear_prediction = ToPs_linear_y_pred_prob.apply(lambda x: 1 if x >=0.5 else 0)
-prediction_data['ToPs_linear_pred'] = ToPs_linear_prediction.as_matrix()
+	add_metric('f1score_unpopular', 'xtc', XT_f1score[0])
+	add_metric('f1score_popular', 'xtc', XT_f1score[1])
 
+	print('Classification Report:')
+	print(xtc_classification_report)
+	f.write('Classification Report:\n')
+	f.write(xtc_classification_report)
 
-t_ToPs_l2 = time.time()
+	print('\n')
+	f.write('\n')
 
 
-ToPs_linear_accuracy = accuracy_score(ToPs_linear_y_true, ToPs_linear_prediction) 
-print('Accuracy: {0:.3f}'.format(ToPs_linear_accuracy))
-f.write('Accuracy: {0:.3f}\n'.format(ToPs_linear_accuracy))
 
-ToPs_linear_log_loss = log_loss(ToPs_linear_y_true, ToPs_linear_y_pred_prob)
-print('Logarithmic Loss: {0:.3f}'.format(ToPs_linear_log_loss))
-f.write('Logarithmic Loss: {0:.3f}\n'.format(ToPs_linear_log_loss))
+	# ADABOOST CLASSIFIER
+	print('ADABOOST CLASSIFIER')
+	f.write('\nADABOOST CLASSIFIER\n')
 
-ToPs_linear_area_roc = roc_auc_score(ToPs_linear_y_true, ToPs_linear_y_pred_prob)
-print('Area under ROC Curve: {0:.3f}'.format(ToPs_linear_area_roc))
-f.write('Area under ROC Curve: {0:.3f}\n'.format(ToPs_linear_area_roc))
+	t_ada1 = time.time()
 
-ToPs_linear_time_taken = t_ToPs_l2 - t_ToPs_l1
-print('Time taken: {0:.3f} minutes'.format(ToPs_linear_time_taken/60))
-f.write('Time taken: {0:.3f} minutes\n'.format(ToPs_linear_time_taken/60))
+	ada_clf = AdaBoostClassifier(n_estimators=50)
+	ada_clf.fit(news_x_train, news_y_train)  # Train the data
+	ada_prediction = ada_clf.predict(news_x_test)  # Predict using test data
+	ada_predict_prob = ada_clf.predict_proba(news_x_test) # Predict class probabilities
 
-ToPs_linear_confusion_matrix = confusion_matrix(ToPs_linear_y_true, ToPs_linear_prediction)
-print('Confusion Matrix: \n', ToPs_linear_confusion_matrix)
-f.write('Confusion Matrix: \n')
-f.write(str(ToPs_linear_confusion_matrix))
-f.write('\n')
+	prediction_data['ada_pred_prob'] = ada_predict_prob[:, 1]
+	prediction_data['ada_pred'] = ada_prediction
 
-ToPs_linear_classification_report = classification_report(ToPs_linear_y_true, ToPs_linear_prediction, target_names=class_names)
-ToPs_linear_precision, ToPs_linear_recall, ToPs_linear_f1score, ToPs_linear_support = precision_recall_fscore_support(ToPs_linear_y_true, ToPs_linear_prediction, average=None)
-print('Classification Report:')
-print(ToPs_linear_classification_report)
-f.write('Classification Report:\n')
-f.write(ToPs_linear_classification_report)
+	t_ada2 = time.time()
 
-# Output ToPs tree to output.txt
-f.write('\n\n----- ToPs classifier tree (linear) -----\n\n')
-f.write(str(news_ToPs_linear.root_node))
-f.write('\nMax Depth of Tree: {0}'.format(news_ToPs_linear.get_depth_of_tree()))
-f.write('\n')
+	# Calculate metrics and save to metrics_all_runs dict using add_metric funtion
+	ada_accuracy = accuracy_score(news_y_test, ada_prediction)
+	add_metric('accuracy', 'ada', ada_accuracy)
+	print('Accuracy: {0:.3f}'.format(ada_accuracy))
+	f.write('Accuracy: {0:.3f}\n'.format(ada_accuracy))
 
+	ada_log_loss = log_loss(news_y_test, ada_predict_prob[:, 1])
+	add_metric('log_loss', 'ada', ada_log_loss)
+	print('Logarithmic Loss: {0:.3f}'.format(ada_log_loss))
+	f.write('Logarithmic Loss: {0:.3f}\n'.format(ada_log_loss))
 
-print('\n')
-f.write('\n')
+	ada_area_roc = roc_auc_score(news_y_test, ada_predict_prob[:, 1])
+	add_metric('area_roc', 'ada', ada_area_roc)
+	print('Area under ROC Curve: {0:.3f}'.format(ada_area_roc))
+	f.write('Area under ROC Curve: {0:.3f}\n'.format(ada_area_roc))
 
+	ada_time_taken = t_ada2 - t_ada1
+	add_metric('training_time', 'ada', ada_time_taken)
+	print('Time taken: {0:.3f} seconds'.format(ada_time_taken))
+	f.write('Time taken: {0:.3f} seconds\n'.format(ada_time_taken))
 
+	ada_confusion_matrix = confusion_matrix(news_y_test, ada_prediction)
+	print('Confusion Matrix: \n', ada_confusion_matrix)
+	f.write('Confusion Matrix: \n')
+	f.write(str(ada_confusion_matrix))
+	f.write('\n')
 
+	ada_classification_report = classification_report(news_y_test, ada_prediction, target_names=class_names)
+	ADA_precision, ADA_recall, ADA_f1score, ADA_support = precision_recall_fscore_support(news_y_test, ada_prediction, average=None)
 
-print('TREES OF PREDICTORS - 3 CLASSIFIERS (RandomForest ExtraTrees & AdaBoost')
-f.write('\nTREES OF PREDICTORS - 3 CLASSIFIERS (RandomForest ExtraTrees & AdaBoost\n')
+	add_metric('precision_unpopular', 'ada', ADA_precision[0])
+	add_metric('precision_popular', 'ada', ADA_precision[1])
 
-t_ToPs_3clf1 = time.time()
+	add_metric('recall_unpopular', 'ada', ADA_recall[0])
+	add_metric('recall_popular', 'ada', ADA_recall[1])
 
-news_ToPs_three_clf = ToPs(news_x_train, news_y_train, news_x_test, news_y_test, ['RandomForest', 'ExtraTrees', 'AdaBoost'])  # ToPs made of RandomForest, ExtraTrees and AdaBoost
-news_ToPs_three_clf.create_tree(3) # Algorithm 1 & 2 - Create tree
-ToPs_three_clf_y_true, ToPs_three_clf_y_pred_prob = news_ToPs_three_clf.predict_proba() # Algorithm 3 - Test
+	add_metric('f1score_unpopular', 'ada', ADA_f1score[0])
+	add_metric('f1score_popular', 'ada', ADA_f1score[1])
 
-prediction_data['y_true_ToPs_3clf'] = ToPs_three_clf_y_true.as_matrix()
-prediction_data['ToPs_3clf_pred_prob'] = ToPs_three_clf_y_pred_prob.as_matrix()
+	print('Classification Report:')
+	print(ada_classification_report)
+	f.write('Classification Report:\n')
+	f.write(ada_classification_report)
 
+	print('\n')
+	f.write('\n')
 
-ToPs_three_clf_prediction = ToPs_three_clf_y_pred_prob.apply(lambda x: 1 if x >=0.5 else 0)
-prediction_data['ToPs_3clf_pred'] = ToPs_three_clf_prediction.as_matrix()
 
 
-t_ToPs_3clf2 = time.time()
+	# TREES OF PREDICTORS CLASSIFIER (ToPs)
 
+	print('TREES OF PREDICTORS - LINEAR')
+	f.write('\nTREES OF PREDICTORS - LINEAR\n')
 
-ToPs_three_clf_accuracy = accuracy_score(ToPs_three_clf_y_true, ToPs_three_clf_prediction) 
-print('Accuracy: {0:.3f}'.format(ToPs_three_clf_accuracy))
-f.write('Accuracy: {0:.3f}\n'.format(ToPs_three_clf_accuracy))
+	t_ToPs_l1 = time.time()
 
-ToPs_three_clf_log_loss = log_loss(ToPs_three_clf_y_true, ToPs_three_clf_y_pred_prob)
-print('Logarithmic Loss: {0:.3f}'.format(ToPs_three_clf_log_loss))
-f.write('Logarithmic Loss: {0:.3f}\n'.format(ToPs_three_clf_log_loss))
+	news_ToPs_linear = ToPs(news_x_train, news_y_train, news_x_test, news_y_test, ['LinearSGD'])  #ToPs made of Linear SGD Classifier
+	news_ToPs_linear.create_tree(inf) # Algorithm 1 & 2 - Create tree
+	ToPs_linear_y_true, ToPs_linear_y_pred_prob = news_ToPs_linear.predict_proba() # Algorithm 3 - Test
 
-ToPs_three_clf_area_roc = roc_auc_score(ToPs_three_clf_y_true, ToPs_three_clf_y_pred_prob)
-print('Area under ROC Curve: {0:.3f}'.format(ToPs_three_clf_area_roc))
-f.write('Area under ROC Curve: {0:.3f}\n'.format(ToPs_three_clf_area_roc))
+	prediction_data['y_true_ToPs_linear'] = ToPs_linear_y_true.as_matrix()
+	prediction_data['ToPs_linear_pred_prob'] = ToPs_linear_y_pred_prob.as_matrix()
 
-ToPs_three_clf_time_taken = t_ToPs_3clf2 - t_ToPs_3clf1
-print('Time taken: {0:.3f} mins'.format(ToPs_three_clf_time_taken/60))
-f.write('Time taken: {0:.3f} mins\n'.format(ToPs_three_clf_time_taken/60))
+	ToPs_linear_prediction = ToPs_linear_y_pred_prob.apply(lambda x: 1 if x >=0.5 else 0)
+	prediction_data['ToPs_linear_pred'] = ToPs_linear_prediction.as_matrix()
 
-ToPs_three_clf_confusion_matrix = confusion_matrix(ToPs_three_clf_y_true, ToPs_three_clf_prediction)
-print('Confusion Matrix: \n', ToPs_three_clf_confusion_matrix)
-f.write('Confusion Matrix: \n')
-f.write(str(ToPs_three_clf_confusion_matrix))
-f.write('\n')
+	t_ToPs_l2 = time.time()
 
-ToPs_three_clf_classification_report = classification_report(ToPs_three_clf_y_true, ToPs_three_clf_prediction, target_names=class_names)
-ToPs_three_clf_precision, ToPs_three_clf_recall, ToPs_three_clf_f1score, ToPs_three_clf_support = precision_recall_fscore_support(ToPs_three_clf_y_true, ToPs_three_clf_prediction, average=None)
-print('Classification Report:')
-print(ToPs_three_clf_classification_report) 
-f.write('Classification Report:')
-f.write(ToPs_three_clf_classification_report) 
 
-# Output ToPs results to output.txt
-f.write('\n\n----- ToPs classifier tree (3 classifiers) -----\n\n')
-f.write(str(news_ToPs_three_clf.root_node))
-f.write('\nMax Depth of Tree: {0}'.format(news_ToPs_three_clf.get_depth_of_tree()))
-f.write('\n')
+	ToPs_linear_accuracy = accuracy_score(ToPs_linear_y_true, ToPs_linear_prediction) 
+	add_metric('accuracy', 'ToPs_linear', ToPs_linear_accuracy)
+	print('Accuracy: {0:.3f}'.format(ToPs_linear_accuracy))
+	f.write('Accuracy: {0:.3f}\n'.format(ToPs_linear_accuracy))
 
+	ToPs_linear_log_loss = log_loss(ToPs_linear_y_true, ToPs_linear_y_pred_prob)
+	add_metric('log_loss', 'ToPs_linear', ToPs_linear_log_loss)
+	print('Logarithmic Loss: {0:.3f}'.format(ToPs_linear_log_loss))
+	f.write('Logarithmic Loss: {0:.3f}\n'.format(ToPs_linear_log_loss))
 
+	ToPs_linear_area_roc = roc_auc_score(ToPs_linear_y_true, ToPs_linear_y_pred_prob)
+	add_metric('area_roc', 'ToPs_linear', ToPs_linear_area_roc)
+	print('Area under ROC Curve: {0:.3f}'.format(ToPs_linear_area_roc))
+	f.write('Area under ROC Curve: {0:.3f}\n'.format(ToPs_linear_area_roc))
 
-# Output predictions from all classifiers to a csv
-prediction_df = pd.DataFrame(prediction_data)
-prediction_df.to_csv('AllPredictions.csv', index=False)
+	ToPs_linear_time_taken = t_ToPs_l2 - t_ToPs_l1
+	add_metric('training_time', 'ToPs_linear', ToPs_linear_time_taken)
+	print('Time taken: {0:.3f} seconds'.format(ToPs_linear_time_taken))
+	f.write('Time taken: {0:.3f} seconds\n'.format(ToPs_linear_time_taken))
 
+	ToPs_linear_confusion_matrix = confusion_matrix(ToPs_linear_y_true, ToPs_linear_prediction)
+	print('Confusion Matrix: \n', ToPs_linear_confusion_matrix)
+	f.write('Confusion Matrix: \n')
+	f.write(str(ToPs_linear_confusion_matrix))
+	f.write('\n')
 
+	ToPs_linear_classification_report = classification_report(ToPs_linear_y_true, ToPs_linear_prediction, target_names=class_names)
+	ToPs_linear_precision, ToPs_linear_recall, ToPs_linear_f1score, ToPs_linear_support = precision_recall_fscore_support(ToPs_linear_y_true, ToPs_linear_prediction, average=None)
+
+	add_metric('precision_unpopular', 'ToPs_linear', ToPs_linear_precision[0])
+	add_metric('precision_popular', 'ToPs_linear', ToPs_linear_precision[1])
+
+	add_metric('recall_unpopular', 'ToPs_linear', ToPs_linear_recall[0])
+	add_metric('recall_popular', 'ToPs_linear', ToPs_linear_recall[1])
+
+	add_metric('f1score_unpopular', 'ToPs_linear', ToPs_linear_f1score[0])
+	add_metric('f1score_popular', 'ToPs_linear', ToPs_linear_f1score[1])
+
+	print('Classification Report:')
+	print(ToPs_linear_classification_report)
+	f.write('Classification Report:\n')
+	f.write(ToPs_linear_classification_report)
+
+	# Output ToPs tree to output.txt
+	f.write('\n\n----- ToPs classifier tree (linear) -----\n\n')
+	f.write(str(news_ToPs_linear.root_node))
+	f.write('\nMax Depth of Tree: {0}'.format(news_ToPs_linear.get_depth_of_tree()))
+	f.write('\n')
+
+
+	print('\n')
+	f.write('\n')
+
+
+
+
+	print('TREES OF PREDICTORS - 3 CLASSIFIERS (RandomForest ExtraTrees & AdaBoost')
+	f.write('\nTREES OF PREDICTORS - 3 CLASSIFIERS (RandomForest ExtraTrees & AdaBoost\n')
+
+	t_ToPs_3clf1 = time.time()
+
+	news_ToPs_three_clf = ToPs(news_x_train, news_y_train, news_x_test, news_y_test, ['RandomForest', 'ExtraTrees', 'AdaBoost'])  # ToPs made of RandomForest, ExtraTrees and AdaBoost
+	news_ToPs_three_clf.create_tree(3) # Algorithm 1 & 2 - Create tree
+	ToPs_three_clf_y_true, ToPs_three_clf_y_pred_prob = news_ToPs_three_clf.predict_proba() # Algorithm 3 - Test
+
+	prediction_data['y_true_ToPs_3clf'] = ToPs_three_clf_y_true.as_matrix()
+	prediction_data['ToPs_3clf_pred_prob'] = ToPs_three_clf_y_pred_prob.as_matrix()
+
+	ToPs_three_clf_prediction = ToPs_three_clf_y_pred_prob.apply(lambda x: 1 if x >=0.5 else 0)
+	prediction_data['ToPs_3clf_pred'] = ToPs_three_clf_prediction.as_matrix()
+
+	t_ToPs_3clf2 = time.time()
+
+
+	ToPs_three_clf_accuracy = accuracy_score(ToPs_three_clf_y_true, ToPs_three_clf_prediction)
+	add_metric('accuracy', 'ToPs_three_clf', ToPs_three_clf_accuracy)
+	print('Accuracy: {0:.3f}'.format(ToPs_three_clf_accuracy))
+	f.write('Accuracy: {0:.3f}\n'.format(ToPs_three_clf_accuracy))
+
+	ToPs_three_clf_log_loss = log_loss(ToPs_three_clf_y_true, ToPs_three_clf_y_pred_prob)
+	add_metric('log_loss', 'ToPs_three_clf', ToPs_three_clf_log_loss)
+	print('Logarithmic Loss: {0:.3f}'.format(ToPs_three_clf_log_loss))
+	f.write('Logarithmic Loss: {0:.3f}\n'.format(ToPs_three_clf_log_loss))
+
+	ToPs_three_clf_area_roc = roc_auc_score(ToPs_three_clf_y_true, ToPs_three_clf_y_pred_prob)
+	add_metric('area_roc', 'ToPs_three_clf', ToPs_three_clf_area_roc)
+	print('Area under ROC Curve: {0:.3f}'.format(ToPs_three_clf_area_roc))
+	f.write('Area under ROC Curve: {0:.3f}\n'.format(ToPs_three_clf_area_roc))
+
+	ToPs_three_clf_time_taken = t_ToPs_3clf2 - t_ToPs_3clf1
+	add_metric('training_time', 'ToPs_three_clf', ToPs_three_clf_time_taken)
+	print('Time taken: {0:.3f} mins'.format(ToPs_three_clf_time_taken/60))
+	f.write('Time taken: {0:.3f} mins\n'.format(ToPs_three_clf_time_taken/60))
+
+	ToPs_three_clf_confusion_matrix = confusion_matrix(ToPs_three_clf_y_true, ToPs_three_clf_prediction)
+	print('Confusion Matrix: \n', ToPs_three_clf_confusion_matrix)
+	f.write('Confusion Matrix: \n')
+	f.write(str(ToPs_three_clf_confusion_matrix))
+	f.write('\n')
+
+	ToPs_three_clf_classification_report = classification_report(ToPs_three_clf_y_true, ToPs_three_clf_prediction, target_names=class_names)
+	ToPs_three_clf_precision, ToPs_three_clf_recall, ToPs_three_clf_f1score, ToPs_three_clf_support = precision_recall_fscore_support(ToPs_three_clf_y_true, ToPs_three_clf_prediction, average=None)
+
+	add_metric('precision_unpopular', 'ToPs_three_clf', ToPs_three_clf_precision[0])
+	add_metric('precision_popular', 'ToPs_three_clf', ToPs_three_clf_precision[1])
+
+	add_metric('recall_unpopular', 'ToPs_three_clf', ToPs_three_clf_recall[0])
+	add_metric('recall_popular', 'ToPs_three_clf', ToPs_three_clf_recall[1])
+
+	add_metric('f1score_unpopular', 'ToPs_three_clf', ToPs_three_clf_f1score[0])
+	add_metric('f1score_popular', 'ToPs_three_clf', ToPs_three_clf_f1score[1])
+
+
+	print('Classification Report:')
+	print(ToPs_three_clf_classification_report) 
+	f.write('Classification Report:\n')
+	f.write(ToPs_three_clf_classification_report) 
+
+	# Output ToPs results to output.txt
+	f.write('\n\n----- ToPs classifier tree (3 classifiers) -----\n\n')
+	f.write(str(news_ToPs_three_clf.root_node))
+	f.write('\nMax Depth of Tree: {0}'.format(news_ToPs_three_clf.get_depth_of_tree()))
+	f.write('\n')
+
+
+
+	# Output predictions from all classifiers to a csv
+	prediction_df = pd.DataFrame(prediction_data)
+	prediction_df.to_csv('AllPredictions.csv', index=False)
+
+
+# Calculate mean and std from all runs
+metric_mean = {}
+metric_std = {}
+csv_heading = ""
+mean_csv_values = ""
+std_csv_values = ""
+for metric_name, metric_dict in metrics_all_runs.items():
+	metric_mean[metric_name] = {}
+	metric_std[metric_name] = {}
+	for classifier_name, metric_values in metric_dict.items():
+		mean_val = np.mean(metric_values)
+		std_val = np.std(metric_values)
+		metric_mean[metric_name][classifier_name] = mean_val
+		metric_std[metric_name][classifier_name] = std_val
+		csv_heading += metric_name + " - " + classifier_name + ","
+		mean_csv_values += str(mean_val) + ","
+		std_csv_values += str(std_val) + ","
+
+
+metrics_file_handle = open('metric_means.csv', 'w')
+metrics_file_handle.write(csv_heading + "\n")
+metrics_file_handle.write(mean_csv_values + "\n")
+metrics_file_handle.close()
+
+metrics_file_handle = open('metric_stds.csv', 'w')
+metrics_file_handle.write(csv_heading + "\n")
+metrics_file_handle.write(std_csv_values + "\n")
+metrics_file_handle.close()
 
 ####### PLOT COMPARATIVE FIGURES FOR EVALUATION METRICS #######
+
 
 # ROC Curve
 plt.figure()
 # Random Forest
 fpr, tpr, thresholds = roc_curve(news_y_test, rfc_predict_prob[:, 1])
 rfc_roc_auc = auc(fpr, tpr)
-plt.plot(fpr,tpr,label='Random Forest AUC = {0:.2f}'.format(rfc_roc_auc), color='r', linestyle = '-.') 
+plt.plot(fpr,tpr,label='Random Forest AUC = {0:.2f}'.format(metric_mean['area_roc']['rfc']), color='r', linestyle = '-.') 
 
 # Extra Trees
 fpr, tpr, thresholds = roc_curve(news_y_test, xtc_predict_prob[:, 1])
 xtc_roc_auc = auc(fpr, tpr)
-plt.plot(fpr,tpr,label='Extra Tree AUC = {0:.2f}'.format(xtc_roc_auc), color='g', linestyle = '--') 
+plt.plot(fpr,tpr,label='Extra Tree AUC = {0:.2f}'.format(metric_mean['area_roc']['xtc']), color='g', linestyle = '--') 
 
 # AdaBoost
 fpr, tpr, thresholds = roc_curve(news_y_test, ada_predict_prob[:, 1])
 ada_roc_auc = auc(fpr, tpr)
-plt.plot(fpr,tpr,label='AdaBoost AUC = {0:.2f}'.format(ada_roc_auc), color='b', linestyle = ':') 
+plt.plot(fpr,tpr,label='AdaBoost AUC = {0:.2f}'.format(metric_mean['area_roc']['ada']), color='b', linestyle = ':') 
 
 # ToPs Linear
 fpr, tpr, thresholds = roc_curve(ToPs_linear_y_true, ToPs_linear_y_pred_prob)
 ToPs_linear_roc_auc = auc(fpr, tpr)
-plt.plot(fpr,tpr,label='ToPs Linear AUC = {0:.2f}'.format(ToPs_linear_roc_auc), color='c', linestyle = '--')
+plt.plot(fpr,tpr,label='ToPs Linear AUC = {0:.2f}'.format(metric_mean['area_roc']['ToPs_linear']), color='c', linestyle = '--')
 
 # ToPs 3 Classifiers 
 fpr, tpr, thresholds = roc_curve(ToPs_three_clf_y_true, ToPs_three_clf_y_pred_prob)
 ToPs_three_clf_roc_auc = auc(fpr, tpr)
-plt.plot(fpr,tpr,label='ToPs 3 Classifiers AUC = {0:.2f}'.format(ToPs_three_clf_roc_auc), color='m', linestyle = ':')
-
-# fpr, tpr, thresholds = roc_curve(news_y_test, ada_prediction)
-# ToPs_three_clf_roc_auc = auc(fpr, tpr)
-# plt.plot(fpr,tpr,label='ToPs 3 Classifiers AUC = {0:.2f}'.format(ToPs_three_clf_roc_auc), color='m', linestyle = ':')
-
+plt.plot(fpr,tpr,label='ToPs 3 Classifiers AUC = {0:.2f}'.format(metric_mean['area_roc']['ToPs_three_clf']), color='m', linestyle = ':')
 
 
 plt.title('ROC Curve')
@@ -473,40 +562,40 @@ plt.savefig('fig_roc_curve.png')
 # Area Under ROC
 plt.figure()
 index = np.arange(5)
-# plt.bar(index, [rfc_area_roc, xtc_area_roc, ada_area_roc, ToPs_linear_area_roc, ada_area_roc], align='center')
-plt.bar(index, [rfc_area_roc, xtc_area_roc, ada_area_roc, ToPs_linear_area_roc, ToPs_three_clf_area_roc], align='center')
+plt.bar(index, [metric_mean['area_roc']['rfc'], metric_mean['area_roc']['xtc'], metric_mean['area_roc']['ada'], metric_mean['area_roc']['ToPs_linear'], metric_mean['area_roc']['ToPs_three_clf']], align='center')
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Area Under ROC')
 plt.title('Area Under ROC Curve')
 plt.savefig('fig_area_roc.png')
 
 
+
 # Accuracy
 plt.figure()
 index = np.arange(5)
-# plt.bar(index, [rfc_accuracy, xtc_accuracy, ada_accuracy, ToPs_linear_accuracy, ada_accuracy], align='center')
-plt.bar(index, [rfc_accuracy, xtc_accuracy, ada_accuracy, ToPs_linear_accuracy, ToPs_three_clf_accuracy], align='center')
+plt.bar(index, [metric_mean['accuracy']['rfc'], metric_mean['accuracy']['xtc'], metric_mean['accuracy']['ada'], metric_mean['accuracy']['ToPs_linear'], metric_mean['accuracy']['ToPs_three_clf']], align='center')
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Accuracy')
 plt.title('Accuracy')
 plt.savefig('fig_accuracy.png')
 
+
+
 # Log Loss
 plt.figure()
 index = np.arange(5)
-# plt.bar(index, [rfc_log_loss, xtc_log_loss, ada_log_loss, ToPs_linear_log_loss, ada_log_loss], align='center')
-plt.bar(index, [rfc_log_loss, xtc_log_loss, ada_log_loss, ToPs_linear_log_loss, ToPs_three_clf_log_loss], align='center')
+plt.bar(index, [metric_mean['log_loss']['rfc'], metric_mean['log_loss']['xtc'], metric_mean['log_loss']['ada'], metric_mean['log_loss']['ToPs_linear'], metric_mean['log_loss']['ToPs_three_clf']], align='center')
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Logarithmic Loss')
 plt.title('Logarithmic Loss')
 plt.savefig('fig_log_loss.png')
 
 
+
 # Time Taken
 plt.figure()
 index = np.arange(5)
-# plt.bar(index, [rfc_time_taken, xtc_time_taken, ada_time_taken, ToPs_linear_time_taken, ada_time_taken], align='center')
-plt.bar(index, [rfc_time_taken, xtc_time_taken, ada_time_taken, ToPs_linear_time_taken, ToPs_three_clf_time_taken], align='center')
+plt.bar(index, [metric_mean['training_time']['rfc'], metric_mean['training_time']['xtc'], metric_mean['training_time']['ada'], metric_mean['training_time']['ToPs_linear'], metric_mean['training_time']['ToPs_three_clf']], align='center')
 plt.xticks(index, ('Random Forest', 'Extra Trees','AdaBoost', 'ToPs(linear)', 'ToPs (3 classifiers)'))
 plt.ylabel('Run Time (seconds)')
 plt.title('Run Time')
@@ -514,17 +603,15 @@ plt.savefig('fig_runtime.png')
 
 
 
-
 # Precision
 plt.figure()
 index = np.arange(2)
 bar_width = 0.1
-plt.bar(index, RF_precision, bar_width, color='r', label='Random Forest')
-plt.bar(index+bar_width, XT_precision, bar_width, color='g', label='Extra Trees')
-plt.bar(index+2*(bar_width), ADA_precision, bar_width, color='b', label = 'AdaBoost')
-plt.bar(index+3*(bar_width), ToPs_linear_precision, bar_width, color='c', label = 'ToPs (linear)')
-# plt.bar(index+4*(bar_width), ADA_precision, bar_width, color='m', label = 'ToPs (3 classifiers)') #- FIX THIS!!!
-plt.bar(index+4*(bar_width), ToPs_three_clf_precision, bar_width, color='m', label = 'ToPs (3 classifiers)')
+plt.bar(index, [metric_mean['precision_unpopular']['rfc'], metric_mean['precision_popular']['rfc']], bar_width, color='r', label='Random Forest')
+plt.bar(index+bar_width, [metric_mean['precision_unpopular']['xtc'], metric_mean['precision_popular']['xtc']], bar_width, color='g', label='Extra Trees')
+plt.bar(index+2*(bar_width), [metric_mean['precision_unpopular']['ada'], metric_mean['precision_popular']['ada']], bar_width, color='b', label = 'AdaBoost')
+plt.bar(index+3*(bar_width), [metric_mean['precision_unpopular']['ToPs_linear'], metric_mean['precision_popular']['ToPs_linear']], bar_width, color='c', label = 'ToPs (linear)')
+plt.bar(index+4*(bar_width), [metric_mean['precision_unpopular']['ToPs_three_clf'], metric_mean['precision_popular']['ToPs_three_clf']], bar_width, color='m', label = 'ToPs (3 classifiers)')
 plt.xlabel('Class')
 plt.ylabel('Precision Values')
 plt.title('Precision')
@@ -537,12 +624,11 @@ plt.savefig('fig_precision.png')
 plt.figure()
 index = np.arange(2)
 bar_width = 0.1
-plt.bar(index, RF_recall, bar_width, color='r', label='Random Forest')
-plt.bar(index+bar_width, XT_recall, bar_width, color='g', label='Extra Trees')
-plt.bar(index+2*(bar_width), ADA_recall, bar_width, color='b', label = 'AdaBoost')
-plt.bar(index+3*(bar_width), ToPs_linear_recall, bar_width, color='c', label = 'ToPs (linear)')
-# plt.bar(index+4*(bar_width), ADA_recall, bar_width, color='m', label = 'ToPs (3 classifiers)') #- FIX THIS!!!
-plt.bar(index+4*(bar_width), ToPs_three_clf_recall, bar_width, color='m', label = 'ToPs (3 classifiers)')
+plt.bar(index, [metric_mean['recall_unpopular']['rfc'], metric_mean['recall_popular']['rfc']], bar_width, color='r', label='Random Forest')
+plt.bar(index+bar_width, [metric_mean['recall_unpopular']['xtc'], metric_mean['recall_popular']['xtc']], bar_width, color='g', label='Extra Trees')
+plt.bar(index+2*(bar_width), [metric_mean['recall_unpopular']['ada'], metric_mean['recall_popular']['ada']], bar_width, color='b', label = 'AdaBoost')
+plt.bar(index+3*(bar_width), [metric_mean['recall_unpopular']['ToPs_linear'], metric_mean['recall_popular']['ToPs_linear']], bar_width, color='c', label = 'ToPs (linear)')
+plt.bar(index+4*(bar_width), [metric_mean['recall_unpopular']['ToPs_three_clf'], metric_mean['recall_popular']['ToPs_three_clf']], bar_width, color='m', label = 'ToPs (3 classifiers)')
 plt.xlabel('Class')
 plt.ylabel('Recall Values')
 plt.title('Recall')
@@ -551,16 +637,18 @@ plt.legend(loc='upper center')
 plt.savefig('fig_recall.png')
 
 
+
+
+
 # F1-Score
 plt.figure()
 index = np.arange(2)
 bar_width = 0.1
-plt.bar(index, RF_f1score, bar_width, color='r', label='Random Forest')
-plt.bar(index+bar_width, XT_f1score, bar_width, color='g', label='Extra Trees')
-plt.bar(index+2*(bar_width), ADA_f1score, bar_width, color='b', label = 'AdaBoost')
-plt.bar(index+3*(bar_width), ToPs_linear_f1score, bar_width, color='c', label = 'ToPs (linear)')
-# plt.bar(index+4*(bar_width), ADA_f1score, bar_width, color='m', label = 'ToPs (3 classifiers)') #- FIX THIS!!!
-plt.bar(index+4*(bar_width), ToPs_three_clf_f1score, bar_width, color='m', label = 'ToPs (3 classifiers)')
+plt.bar(index, [metric_mean['f1score_unpopular']['rfc'], metric_mean['f1score_popular']['rfc']], bar_width, color='r', label='Random Forest')
+plt.bar(index+bar_width, [metric_mean['f1score_unpopular']['xtc'], metric_mean['f1score_popular']['xtc']], bar_width, color='g', label='Extra Trees')
+plt.bar(index+2*(bar_width), [metric_mean['f1score_unpopular']['ada'], metric_mean['f1score_popular']['ada']], bar_width, color='b', label = 'AdaBoost')
+plt.bar(index+3*(bar_width), [metric_mean['f1score_unpopular']['ToPs_linear'], metric_mean['f1score_popular']['ToPs_linear']], bar_width, color='c', label = 'ToPs (linear)')
+plt.bar(index+4*(bar_width), [metric_mean['f1score_unpopular']['ToPs_three_clf'], metric_mean['f1score_popular']['ToPs_three_clf']], bar_width, color='m', label = 'ToPs (3 classifiers)')
 plt.xlabel('Class')
 plt.ylabel('F1-Score Values')
 plt.title('F1-Score')

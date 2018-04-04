@@ -34,9 +34,10 @@ def get_classifier_instance(name):
 	elif name == 'AdaBoost':
 		classifier = AdaBoostClassifier(n_estimators=50)
 	elif name == 'LinearSGD':
-		classifier = linear_model.SGDClassifier(loss='log', max_iter=100, tol=0.001)
+		classifier = linear_model.SGDClassifier(loss='log', max_iter=200, tol=0.001)
 
 	return classifier
+
 
 
 
@@ -113,7 +114,6 @@ class ToPs:
 
 	# Algorithm 1 - Figure out what the feature_to_split and threshold with minimum loss, then assign children based on that split
 	def create_sub_tree(self, node, max_depth):
-		# print('Current Depth:', node.current_depth)
 
 		threshold_binary = [0.5]
 		threshold_continous = np.arange(0.1, 1.0, 0.1)
@@ -165,7 +165,7 @@ class ToPs:
 			node.right = children_nodes_at_min_loss[0]
 			node.left = children_nodes_at_min_loss[1]
 
-			# print('Creating children for node {0}'.format(node))  #REMOVE LATER
+			# print('Creating children for node {0}'.format(node))  
 
 			# Assign children of this node based on the min loss 
 			self.create_sub_tree(node.right, max_depth)
@@ -176,7 +176,6 @@ class ToPs:
 
 	# Algorithm 1 - Split a node based on a given feature and threshold- split available dataset too. 
 	def split_node(self, node, feature, threshold):
-		# print('Feature: {0}, Threshold: {1:.1f}, Classifier: {2}'.format(feature, threshold, classifier))
 
 		# Split the training data
 		left_x_train = node.x_train[node.x_train[feature] < threshold]
@@ -216,24 +215,17 @@ class ToPs:
 		
 
 		# If data is too skewed one way and cannot be split 
-		if len(right_x_train) == 0 or len(left_x_train) == 0 or len(right_x_validate1) == 0 or len(left_x_validate1) == 0:
+		if len(right_x_train) == 0 or len(left_x_train) == 0 or len(right_x_validate1) == 0 or len(left_x_validate1) == 0 or len(right_y_train.unique()) == 1 or len(left_y_train.unique()) == 1:
 			return None
 
 		# Train classifier on the left data
-		min_loss_left = inf
-		# min_loss_left= float('inf')
+		# min_loss_left = inf
+		min_loss_left= float('inf')
 		clf_left_at_min_loss = None
 		clf_left_name_at_min_loss = None
-		is_dummy_left = False
 
-		for classifier_name in self.classifiers:
-			if len(left_y_train.unique()) == 1:
-				clf_left = DummyClassifier()
-				clf_left_name_at_min_loss = 'DummyClassifier'
-				is_dummy_left = True
-			else:
-				clf_left = get_classifier_instance(classifier_name)
-
+		for classifier_name in self.classifiers:		
+			clf_left = get_classifier_instance(classifier_name)
 			clf_left.fit(left_x_train, left_y_train) 
 			clf_left_y_predict_prob = clf_left.predict_proba(left_x_validate1)
 			log_loss_validation1_left = log_loss(left_y_validate1, clf_left_y_predict_prob, normalize = False, labels = [0,1])
@@ -242,27 +234,17 @@ class ToPs:
 				min_loss_left = log_loss_validation1_left
 				clf_left_at_min_loss = clf_left
 				
-			if is_dummy_left:
-				break
-			else:
-				clf_left_name_at_min_loss = classifier_name
+			clf_left_name_at_min_loss = classifier_name
 
 
 		# Train classifier on the right data
-		#min_loss_right = inf
-		min_loss_right = float('inf')
+		min_loss_right = inf
+		# min_loss_right = float('inf')
 		clf_right_at_min_loss = None
 		clf_right_name_at_min_loss = None
-		is_dummy_right = False
 
-		for classifier_name in self.classifiers:
-			if len(right_y_train.unique()) == 1:
-				clf_right = DummyClassifier()
-				clf_right_name_at_min_loss = 'DummyClassifier'
-				is_dummy_right = True
-			else:
-				clf_right = get_classifier_instance(classifier_name)
-
+		for classifier_name in self.classifiers:	
+			clf_right = get_classifier_instance(classifier_name)
 			clf_right.fit(right_x_train, right_y_train)
 			clf_right_y_predict_prob = clf_right.predict_proba(right_x_validate1)
 			log_loss_validation1_right = log_loss(right_y_validate1, clf_right_y_predict_prob, normalize=False, labels = [0,1])
@@ -271,10 +253,7 @@ class ToPs:
 				min_loss_right = log_loss_validation1_right
 				clf_right_at_min_loss = clf_right
 
-			if is_dummy_right:
-				break
-			else:
-				clf_right_name_at_min_loss = classifier_name
+			clf_right_name_at_min_loss = classifier_name
 
 		# Create nodes based on this split, and return
 		left_node = Node(left_x_train, left_y_train, left_x_validate1, left_y_validate1, left_x_validate2, left_y_validate2, left_x_test, left_y_test, log_loss_validation1_left, clf_left_at_min_loss, node.current_depth+1)
@@ -288,13 +267,12 @@ class ToPs:
 
 
 
-	# Algorithm 2 - Get predictors from root to leaf, and add weights using linear classifier
+	# Algorithm 2 - Get predictors on path from root to leaf, then optimize weights for all predictors on path
 	def add_weights_to_predictors_on_path(self, node, predictors_on_path):
 
 		# If leaf node - create a dataframe with predicted values from all predictors on the path
 		if node.left==None and node.right==None:
-			all_predictors_on_path = predictors_on_path + [node.predictor]
-			# print("All predictors on path: \n", all_predictors_on_path) 
+			all_predictors_on_path = predictors_on_path + [node.predictor] 
 			node.leaf_all_predictors_on_path = all_predictors_on_path
 
 
@@ -326,16 +304,6 @@ class ToPs:
 
 				optimization_result = optimize.minimize(log_loss_with_weights, initial_weights, method="SLSQP", constraints=constraints_dict, bounds=weight_bounds)
 				node.leaf_optimized_weights = optimization_result.x
-
-				print('Optimized weights:')
-				print(node.leaf_optimized_weights)
-				
-
-				# # Apply linear classifier based on all the predictions on root to leaf path
-				# clf_linear_classifier = linear_model.SGDClassifier(loss='log', max_iter=1000, tol=0.0001)
-				# clf_linear_classifier.fit(all_pred_proba_on_path_df, node.y_validate2)
-				# node.leaf_classifier = clf_linear_classifier
-				# # print("Weights learned: ", clf_linear_classifier.coef_) # Weights assigned as per algorithm 2
 
 
 		# Continue traversing through tree and add predictors until leaf node
@@ -378,22 +346,6 @@ class ToPs:
 			# Assign equal weights if optimized weights don't exist (if len(x_validate2) = 0 or y_validate2 didn't have unique values)
 			else:
 				y_pred_prob_final = all_pred_proba_on_path_test_df.sum(axis=1)/len(all_pred_proba_on_path_test_df.columns)
-
-
-			# # Apply linear regressor based on all the predictions on root to leaf path
-			# if node.leaf_classifier:
-			# 	if len(node.x_test) > 0:
-			# 		y_pred_prob_final = node.leaf_classifier.predict_proba(all_pred_proba_on_path_test_df)
-			# 		y_pred_prob_final = y_pred_prob_final[:, 1]
-			# 	else:
-			# 		y_pred_prob_final = []
-
-			# # No leaf regressor - length of validate2 was 0 
-			# else:
-			# 	y_pred_prob_final = all_predictions_on_path_test_df.sum(axis=1)/len(all_predictions_on_path_test_df.columns)
-
-
-			# print('Leaf - Predictions for {0} values'.format(len(y_pred_prob_final)))
 			
 			return(node.y_test, pd.DataFrame(y_pred_prob_final))	
 
@@ -435,10 +387,6 @@ class ToPs:
 		y_true = y_true.reset_index(drop=True)
 		y_pred_proba = y_pred_proba.reset_index(drop=True)
 
-		# result_df = pd.concat([y_true, y_pred_proba], axis=1)
-		# result_df.columns = ['y_true', 'y_pred_proba']
-		# result_df.to_csv('ToPs_result.csv', index=False)
-
 		return y_true, y_pred_proba[0]
 
 
@@ -476,6 +424,7 @@ class ToPs:
 		current_depth = max(depth_left, depth_right)+1
 
 		return current_depth
+
 
 
 	# Helper function - Get depth of tree
@@ -520,14 +469,12 @@ class Node:
 		# Set in add_weight function
 		self.loss_validate2 = None
 
-		# Regressor on leaf node with weights for all predictors on the path from root to leaf
-		# self.leaf_classifier = None
+		# For leaf node - all predictors on the path from root to leaf, and optimized weights
 		self.leaf_all_predictors_on_path = None
 		self.leaf_optimized_weights = np.array([])
 
 
 	def __str__(self):
-		# string_to_print = 'Predictor: ' + str(self.predictor) + '\n'
 		prefix = '   '*self.current_depth
 		string_to_print = prefix + 'Current Depth: ' + str(self.current_depth) + '\n'
 		string_to_print += prefix + 'Feature to split: ' + str(self.feature_to_split) + '\n'
@@ -544,7 +491,6 @@ class Node:
 		else:
 			string_to_print += prefix + 'Right Child: \n' + str(self.right) + '\n'
 
-		# string_to_print += 'Features available: ' + str(self.training_data_x.columns.values) + '\n'
 
 		return string_to_print
 	
