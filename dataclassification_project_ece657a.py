@@ -128,8 +128,8 @@ def add_metric(metric_name, predictor_name, value):
 
 
 # Loop to the run the experiment 10 times 
-# Edited to 3 experiments for submission so code finishes in half an hour, but ran it for 10 times for the report
-for i in range(10):
+# Edited to 2 experiments for submission so code finishes in 20 minutes, but ran it for 10 times for the report
+for i in range(2):
 	print('\n----------------------------')
 	print('Experiment No.:  {0}\n'.format(i+1))
 	f.write('\n\n----------------------------')

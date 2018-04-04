@@ -481,6 +481,8 @@ class Node:
 		string_to_print += prefix + 'Threshold: ' + str(self.threshold) +'\n'
 		string_to_print += prefix + 'Predictor Name: ' + str(self.predictor_name) + '\n'
 		string_to_print += prefix + 'Log Loss (Validation 1): ' + str(self.loss_validate1) + '\n'
+		if node.leaf_optimized_weights.size > 0:
+			string_to_print += prefix + 'Optimized Weights: ' + str(self.leaf_optimized_weights) + '\n'
 		if self.left == None:
 			string_to_print += prefix + 'Left Child: ' + str(self.left) + '\n'
 		else:
