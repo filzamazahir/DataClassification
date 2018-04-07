@@ -7,13 +7,9 @@
 import pandas as pd
 import numpy as np
 
-from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 
-from sklearn.svm import SVC
 from sklearn import linear_model
-from sklearn.dummy import DummyClassifier
-
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.ensemble import AdaBoostClassifier
@@ -307,10 +303,6 @@ class ToPs:
 				self.add_weights_to_predictors_on_path(node.right, predictors_on_path + [node.predictor])
 
 	
-	# Algorithm 2 - Check if some of weights is 1
-	
-
-
 
 	# Algorithm 3 - Traverse the tree and use test values to predict y probability
 	def _predict_traverse_tree(self, node):

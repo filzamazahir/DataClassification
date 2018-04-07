@@ -10,7 +10,7 @@
 import pandas as pd
 import numpy as np
 
-
+from sklearn import preprocessing
 from scipy.stats import zscore
 
 from sklearn.model_selection import train_test_split
@@ -127,8 +127,8 @@ def add_metric(metric_name, predictor_name, value):
 		metrics_all_runs[metric_name][predictor_name].append(value)
 
 
-# Loop to the run the experiment 10 times 
-# Edited to 2 experiments for submission so code finishes in 20 minutes, but ran it for 10 times for the report
+# Loop to the run the experiment 20 times 
+# Edited to 2 experiments for submission so code finishes in 20 minutes, but ran it for 20 times for the report
 for i in range(2):
 	print('\n----------------------------')
 	print('Experiment No.:  {0}\n'.format(i+1))
