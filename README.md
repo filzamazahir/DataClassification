@@ -5,5 +5,5 @@ This project compares three existing tree ensembling methods for data classifica
 
 1) Clone the project
 ```
-git clone https://github.com/filzamazahir/DataClassification.git
+git clone https://github.com/filza90/TreesOfPredictors-DataClassification.git
 ```
