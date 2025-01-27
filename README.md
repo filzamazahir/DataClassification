@@ -11,7 +11,7 @@ Make sure to have pip installed, then do
 ```
 pip install requirements.txt
 ```
-Run dataclassification_project_ece657a.py
+Run ```dataclassification_project_ece657a.py```
 
 ## Results
 The new ToPs algorithm implemented had the lowest logarithmic loss and highest AUC-ROC and accuracy compared to the other classification method. However it did very poorly in terms of training time as it is very computationally intensive. It was also noticed that ToPs did not have a good stopping criterion which leads to overfitting.
